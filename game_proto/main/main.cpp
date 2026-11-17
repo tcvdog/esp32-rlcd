@@ -437,7 +437,7 @@ static float qcfDownAt = -10.0f;
 static int lastTapDir = 0;
 static float lastTapAt = -10.0f;
 
-enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17 };
+enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18 };
 static int g_mode = MODE_MENU;
 static int g_menu_sel = 0;
 static int g_secret_step = 0;
@@ -477,6 +477,7 @@ static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
 static bool g_survey_done = false;
+static char g_survey_report[1400] = "";
 static bool g_word_reveal = false;
 static float g_back_hold = 0.0f;
 
@@ -1911,6 +1912,8 @@ static esp_err_t ota_note_post(httpd_req_t *req) {
 
 static void files_enter();
 static void survey_start();
+static void survey_save();
+static void survey_build_report();
 static void music_enter();
 static void music_stop();
 static esp_err_t ota_menu_get(httpd_req_t *req) {
@@ -1980,6 +1983,8 @@ static esp_err_t ota_feedback_post(httpd_req_t *req) {
 static void wifi_scan_now();
 static void files_enter();
 static void survey_start();
+static void survey_save();
+static void survey_build_report();
 static void music_enter();
 static void music_stop();
 static void files_preview();
@@ -1990,6 +1995,8 @@ static int utf8_len(unsigned char c);
 static void goBack();
 static void files_enter();
 static void survey_start();
+static void survey_save();
+static void survey_build_report();
 static void music_enter();
 static void music_stop();
 static esp_err_t ota_back_get(httpd_req_t *req) {
@@ -2029,6 +2036,21 @@ static esp_err_t ota_upload_post(httpd_req_t *req) {
     }
     fclose(f);
     httpd_resp_sendstr(req, "OK");
+    return ESP_OK;
+}
+
+static esp_err_t ota_survey_report_get(httpd_req_t *req) {
+    char q[64] = {0}, a[40] = {0};
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+        httpd_query_key_value(q, "q", a, sizeof(a)) == ESP_OK) {
+        int v[5] = {3,3,3,3,3};
+        sscanf(a, "%d,%d,%d,%d,%d", &v[0], &v[1], &v[2], &v[3], &v[4]);
+        for (int i = 0; i < 5; ++i) g_survey_ans[i] = v[i] < 1 ? 1 : (v[i] > 5 ? 5 : v[i]);
+    }
+    survey_save();
+    survey_build_report();
+    g_mode = MODE_SURVEY_REPORT;
+    httpd_resp_sendstr(req, g_survey_report);
     return ESP_OK;
 }
 
@@ -2471,6 +2493,7 @@ static void ota_start(void) {
     httpd_uri_t files = { .uri = "/files", .method = HTTP_GET, .handler = ota_files_get, .user_ctx = NULL };
     httpd_uri_t wordaudio = { .uri = "/wordaudio", .method = HTTP_GET, .handler = ota_wordaudio_get, .user_ctx = NULL };
     httpd_uri_t info = { .uri = "/info", .method = HTTP_GET, .handler = ota_info_get, .user_ctx = NULL };
+    httpd_uri_t survey_report = { .uri = "/survey_report", .method = HTTP_GET, .handler = ota_survey_report_get, .user_ctx = NULL };
     httpd_uri_t back = { .uri = "/back", .method = HTTP_GET, .handler = ota_back_get, .user_ctx = NULL };
     httpd_uri_t upload = { .uri = "/upload", .method = HTTP_POST, .handler = ota_upload_post, .user_ctx = NULL };
     httpd_uri_t feedback = { .uri = "/feedback", .method = HTTP_POST, .handler = ota_feedback_post, .user_ctx = NULL };
@@ -2489,6 +2512,7 @@ static void ota_start(void) {
     httpd_register_uri_handler(server, &files);
     httpd_register_uri_handler(server, &wordaudio);
     httpd_register_uri_handler(server, &info);
+    httpd_register_uri_handler(server, &survey_report);
     httpd_register_uri_handler(server, &back);
     httpd_register_uri_handler(server, &upload);
     httpd_register_uri_handler(server, &feedback);
@@ -3274,6 +3298,91 @@ static void survey_save() {
     fclose(f);
 }
 
+static int survey_total() {
+    int t = 0;
+    for (int i = 0; i < 5; ++i) t += g_survey_ans[i];
+    return t;
+}
+
+static void survey_build_report() {
+    static const char *names[5] = { "专注", "睡眠", "情绪", "认知", "精力" };
+    int total = survey_total();
+    int low = 5, low_i = 0;
+    for (int i = 0; i < 5; ++i) if (g_survey_ans[i] < low) { low = g_survey_ans[i]; low_i = i; }
+    const char *summary;
+    if (total >= 20) summary = "整体状态较好，建议保持规律作息和运动。";
+    else if (total >= 15) summary = "整体中等偏上，仍有提升空间，优先改善低分项。";
+    else if (total >= 10) summary = "整体中等，建议先处理睡眠、精力和专注方面的短板。";
+    else summary = "多项偏低，建议优先休息；若持续困扰，请咨询专业人士。";
+    const char *tips[5] = {
+        "专注：分段工作，减少同时多任务和手机干扰。",
+        "睡眠：固定起床时间，睡前一小时减少屏幕。",
+        "情绪：每天适量运动，和可信任的人交流。",
+        "认知：阅读、复盘和笔记，给大脑留出休息。",
+        "精力：规律吃饭、补水和短暂休息。"
+    };
+    snprintf(g_survey_report, sizeof(g_survey_report),
+             "前额叶修复调查自评报告\n"
+             "总分 %d/25   均分 %.1f\n"
+             "专注%d 睡眠%d 情绪%d 认知%d 精力%d\n"
+             "%s\n"
+             "%s\n"
+             "%s\n"
+             "声明：自评结果，不构成医学诊断。",
+             total, total / 5.0f,
+             g_survey_ans[0], g_survey_ans[1], g_survey_ans[2], g_survey_ans[3], g_survey_ans[4],
+             summary, tips[low_i], (low_i == 0 ? tips[1] : tips[0]));
+    if (sd_ensure()) {
+        FILE *f = fopen("/sdcard/survey_prefrontal_report.txt", "w");
+        if (f) { fputs(g_survey_report, f); fputc('\n', f); fclose(f); }
+    }
+}
+
+static void drawSurveyReport() {
+    drawStatus();
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 128, 30, "调查问卷报告");
+    int total = survey_total();
+    char b[96];
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    snprintf(b, sizeof(b), "TOTAL %d/25   AVG %.1f", total, total / 5.0f);
+    u8g2_DrawStr(g, 8, 54, b);
+    snprintf(b, sizeof(b), "FOCUS %d  SLEEP %d  MOOD %d  MIND %d  ENERGY %d",
+             g_survey_ans[0], g_survey_ans[1], g_survey_ans[2], g_survey_ans[3], g_survey_ans[4]);
+    u8g2_DrawStr(g, 8, 74, b);
+    const char *summary;
+    if (total >= 20) summary = "整体状态较好，建议保持规律作息和运动。";
+    else if (total >= 15) summary = "整体中等偏上，仍有提升空间，优先改善低分项。";
+    else if (total >= 10) summary = "整体中等，建议先处理睡眠、精力和专注方面的短板。";
+    else summary = "多项偏低，建议优先休息；若持续困扰，请咨询专业人士。";
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    draw_wrapped_utf8(summary, 8, 104, 384, 18, 3);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 8, 168, "SUGGESTIONS");
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    const char *tips = g_survey_report;
+    for (int i = 0; i < 4 && tips; ++i) { const char *nl = strchr(tips, '\n'); if (nl) tips = nl + 1; }
+    int yy = 190;
+    while (tips && *tips && yy <= 258) {
+        const char *nl = strchr(tips, '\n');
+        int len = nl ? (int)(nl - tips) : (int)strlen(tips);
+        char line[256];
+        if (len > (int)sizeof(line) - 1) len = sizeof(line) - 1;
+        memcpy(line, tips, len); line[len] = 0;
+        u8g2_DrawUTF8(g, 8, yy, line);
+        yy += 16;
+        if (!nl) break;
+        tips = nl + 1;
+    }
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 8, 292, "A: MENU   SW: BACK");
+}
+
+static void handleSurveyReport() {
+    if (in.k3 && !prevIn.k3) g_mode = MODE_MENU;
+    prevIn = in;
+}
+
 static void drawSurveyMenu() {
     drawStatus();
     drawZhCentered(MENU_SURVEY, 32);
@@ -3336,7 +3445,7 @@ static void handleSurvey() {
     if (in.x > 0 && prevIn.x <= 0) g_survey_ans[g_survey_q] = (g_survey_ans[g_survey_q] < 5) ? g_survey_ans[g_survey_q] + 1 : 5;
     if (in.k3 && !prevIn.k3) {
         if (g_survey_q < 4) ++g_survey_q;
-        else { survey_save(); g_survey_done = true; }
+        else { survey_save(); survey_build_report(); g_mode = MODE_SURVEY_REPORT; }
     }
     prevIn = in;
 }
@@ -3538,6 +3647,8 @@ static void drawFader(int x, int y, int w, int value, int maxv, bool selected) {
 static void wifi_scan_now();
 static void files_enter();
 static void survey_start();
+static void survey_save();
+static void survey_build_report();
 static void music_enter();
 static void music_stop();
 static void files_preview();
@@ -6554,6 +6665,7 @@ static void goBack() {
     }
     if (g_mode == MODE_WIFI) { g_mode = MODE_SETTINGS; return; }
     if (g_mode == MODE_GAME) { g_mode = MODE_MENU; return; }
+    if (g_mode == MODE_SURVEY_REPORT) { g_mode = MODE_SURVEY_MENU; return; }
     if (g_mode == MODE_SURVEY) { g_mode = MODE_SURVEY_MENU; return; }
     if (g_mode == MODE_SURVEY_MENU) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_WORD) { g_mode = MODE_WORD_MENU; return; }
@@ -6659,6 +6771,12 @@ static void gameTask(void *arg) {
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
             drawSurveyMenu();
+            presentFrame();
+        } else if (g_mode == MODE_SURVEY_REPORT) {
+            handleSurveyReport();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawSurveyReport();
             presentFrame();
         } else if (g_mode == MODE_SURVEY) {
             handleSurvey();
