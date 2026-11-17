@@ -4,13 +4,14 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 
 ## Current build
 
-- Firmware: **v0.43.2**
+- Firmware: **v0.44.0**
 - 400x300 1bpp retro stickman game
 - 6-item / 2-page main menu with a direct **SD card** entry
 - SD browser: TXT paging, WAV playback, MP3 playback, GIF/PNG/JPG/BMP first-frame viewing
 - Voice command C+D: WAV upload to PC, SenseVoice + Whisper dual ASR
 - PC bridge to the current DSH Web session
 - Settings submenu: sound, Wi-Fi, system info, help, voice notes, command feedback
+- PCF85063A RTC + NVS time fallback
 - 3-page system information: software, memory/storage, network/power
 - Settings: speaker volume, ST7305 contrast, Wi-Fi scan and on-screen keyboard
 
@@ -65,7 +66,7 @@ idf.py set-target esp32s3
 idf.py build
 ```
 
-Prebuilt application image: `firmware/esp32-rlcd-v0.43.2.bin`.
+Prebuilt application image: `firmware/esp32-rlcd-v0.44.0.bin`.
 
 ## OTA (preferred)
 

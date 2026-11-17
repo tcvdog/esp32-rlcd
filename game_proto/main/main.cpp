@@ -141,6 +141,9 @@ static bool g_charging = false;
 static bool g_wifi_sta = false;
 static int g_rssi = -127;
 static char g_clock[8] = "--:--";
+static i2c_master_dev_handle_t g_rtc_dev = nullptr;
+static bool g_rtc_ok = false;
+static time_t g_last_time_save = 0;
 static char g_ssid[33] = "";
 static int64_t g_beep_end = 0;
 static QueueHandle_t g_sfx_q = nullptr;
@@ -1673,6 +1676,9 @@ static void drawInkSprite(const Fighter &f) {
     }
 }
 
+static void rtc_write_epoch(time_t now);
+static void time_save_nvs(time_t now);
+
 static void updateClock() {
     time_t now = time(nullptr);
     if (now < 1700000000) {
@@ -1682,6 +1688,11 @@ static void updateClock() {
     struct tm tm;
     localtime_r(&now, &tm);
     strftime(g_clock, sizeof(g_clock), "%H:%M", &tm);
+    if (now - g_last_time_save >= 300) {
+        rtc_write_epoch(now);
+        time_save_nvs(now);
+        g_last_time_save = now;
+    }
 }
 
 static void updateStatus(float dt) {
@@ -2108,7 +2119,7 @@ static esp_err_t ota_diag_get(httpd_req_t *req) {
         "{\"version\":\"%s\",\"mode\":%d,\"menu\":%d,\"view\":%d,\"phys_cat\":%d,\"voice_state\":%d,"
         "\"voice_msg\":\"%s\",\"codec_ret\":%d,\"i2c_ret\":%d,"
         "\"es8311\":%d,\"es7210\":%d,\"codec_stage\":%d,\"codec_err\":%d,\"spk\":%d,\"rec\":%d,"
-        "\"audio_ready\":%d,\"rec_open\":%d,\"voice_bytes\":%u,\"read_ret\":%d,\"read_calls\":%d,\"cap_conn\":%d,\"cap_kb\":%u,\"cap_drop\":%u,\"vad_active\":%d,\"vad_seg\":%u,\"sd_ok\":%d,\"batt_mv\":%d,\"batt_pct\":%d,\"charging\":%d,"
+        "\"rtc_ok\":%d,\"audio_ready\":%d,\"rec_open\":%d,\"voice_bytes\":%u,\"read_ret\":%d,\"read_calls\":%d,\"cap_conn\":%d,\"cap_kb\":%u,\"cap_drop\":%u,\"vad_active\":%d,\"vad_seg\":%u,\"sd_ok\":%d,\"batt_mv\":%d,\"batt_pct\":%d,\"charging\":%d,"
         "\"wifi\":%d,\"rssi\":%d,\"ssid\":\"%s\",\"ip\":\"%s\",\"time\":\"%s\","
         "\"buttons\":{\"k1\":%d,\"k2\":%d,\"k3\":%d,\"k4\":%d,\"sw\":%d},"
         "\"joy\":{\"x\":%d,\"y\":%d}}",
@@ -2116,7 +2127,7 @@ static esp_err_t ota_diag_get(httpd_req_t *req) {
         g_voice_msg, g_codec_ret, g_i2c_ret,
         g_es8311 ? 1 : 0, g_es7210 ? 1 : 0, codec_debug_stage, codec_debug_err,
         g_spk_ok ? 1 : 0, g_rec_ok ? 1 : 0,
-        g_audio_ready ? 1 : 0, g_rec_open_ret, (unsigned)g_voice_bytes, g_read_ret, g_read_calls, g_cap_connected ? 1 : 0, (unsigned)(g_cap_sent / 1024), (unsigned)g_cap_drop, g_vad_active ? 1 : 0, (unsigned)g_vad_segments, g_sd_ok ? 1 : 0, g_batt_mv, g_batt_pct, g_charging ? 1 : 0,
+        g_rtc_ok ? 1 : 0, g_audio_ready ? 1 : 0, g_rec_open_ret, (unsigned)g_voice_bytes, g_read_ret, g_read_calls, g_cap_connected ? 1 : 0, (unsigned)(g_cap_sent / 1024), (unsigned)g_cap_drop, g_vad_active ? 1 : 0, (unsigned)g_vad_segments, g_sd_ok ? 1 : 0, g_batt_mv, g_batt_pct, g_charging ? 1 : 0,
         g_wifi_sta ? 1 : 0, g_rssi, g_ssid, g_ota_info, g_clock,
         in.k1, in.k2, in.k3, in.k4, in.sw, in.rawVrx, in.rawVry);
     httpd_resp_set_type(req, "application/json");
@@ -2196,6 +2207,75 @@ static esp_err_t ota_update_post(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static uint8_t bcd2bin(uint8_t v) { return (v >> 4) * 10 + (v & 0x0F); }
+static uint8_t bin2bcd(uint8_t v) { return ((v / 10) << 4) | (v % 10); }
+
+static bool rtc_init() {
+    i2c_device_config_t cfg = {};
+    cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    cfg.device_address = 0x51;
+    cfg.scl_speed_hz = 100000;
+    if (i2c_master_bus_add_device(g_i2c_static.Get_I2cBusHandle(), &cfg, &g_rtc_dev) != ESP_OK) return false;
+    uint8_t ctrl = 0;
+    if (g_i2c_static.i2c_read_buff(g_rtc_dev, 0x00, &ctrl, 1) != 0) {
+        i2c_master_bus_rm_device(g_rtc_dev);
+        g_rtc_dev = nullptr;
+        return false;
+    }
+    ctrl &= ~0x20; // clear STOP
+    g_i2c_static.i2c_write_buff(g_rtc_dev, 0x00, &ctrl, 1);
+    g_rtc_ok = true;
+    return true;
+}
+
+static bool rtc_read_tm(struct tm *out) {
+    if (!g_rtc_ok || !g_rtc_dev) return false;
+    uint8_t r[7] = {0};
+    if (g_i2c_static.i2c_read_buff(g_rtc_dev, 0x04, r, 7) != 0) return false;
+    int sec = bcd2bin(r[0] & 0x7F);
+    int min = bcd2bin(r[1] & 0x7F);
+    int hour = bcd2bin(r[2] & 0x3F);
+    int day = bcd2bin(r[3] & 0x3F);
+    int mon = bcd2bin(r[5] & 0x1F);
+    int year = 2000 + bcd2bin(r[6]);
+    if (sec > 59 || min > 59 || hour > 23 || day < 1 || day > 31 || mon < 1 || mon > 12 || year < 2020) return false;
+    memset(out, 0, sizeof(*out));
+    out->tm_sec = sec; out->tm_min = min; out->tm_hour = hour;
+    out->tm_mday = day; out->tm_mon = mon - 1; out->tm_year = year - 1900;
+    out->tm_isdst = -1;
+    return true;
+}
+
+static void rtc_write_epoch(time_t now) {
+    if (!g_rtc_ok || !g_rtc_dev) return;
+    struct tm t;
+    localtime_r(&now, &t);
+    uint8_t r[7] = {
+        bin2bcd(t.tm_sec), bin2bcd(t.tm_min), bin2bcd(t.tm_hour),
+        bin2bcd(t.tm_mday), (uint8_t)t.tm_wday, bin2bcd(t.tm_mon + 1), bin2bcd(t.tm_year % 100)
+    };
+    g_i2c_static.i2c_write_buff(g_rtc_dev, 0x04, r, 7);
+}
+
+static void time_save_nvs(time_t now) {
+    nvs_handle_t h;
+    if (nvs_open("time", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_i64(h, "epoch", (int64_t)now);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static time_t time_load_nvs() {
+    nvs_handle_t h;
+    int64_t v = 0;
+    if (nvs_open("time", NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_i64(h, "epoch", &v);
+        nvs_close(h);
+    }
+    return (time_t)v;
+}
+
 static void ota_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
@@ -2247,6 +2327,23 @@ static void ota_start(void) {
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "nvs init still failed: %s; continuing with fallback", esp_err_to_name(ret));
     }
+    setenv("TZ", "CST-8", 1);
+    tzset();
+    rtc_init();
+    struct tm rtc_tm;
+    if (rtc_read_tm(&rtc_tm)) {
+        time_t e = mktime(&rtc_tm);
+        if (e > 1700000000) {
+            struct timeval tv = { .tv_sec = e, .tv_usec = 0 };
+            settimeofday(&tv, nullptr);
+        }
+    } else {
+        time_t e = time_load_nvs();
+        if (e > 1700000000) {
+            struct timeval tv = { .tv_sec = e, .tv_usec = 0 };
+            settimeofday(&tv, nullptr);
+        }
+    }
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_ap();
@@ -2282,8 +2379,6 @@ static void ota_start(void) {
     ESP_ERROR_CHECK(esp_wifi_start());
     esp_wifi_connect();
 
-    setenv("TZ", "CST-8", 1);
-    tzset();
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "ntp.aliyun.com");
     esp_sntp_setservername(1, "pool.ntp.org");
@@ -2430,7 +2525,7 @@ static void drawInfo() {
         snprintf(b, sizeof(b), "Battery %d%%  %dmV", g_batt_pct, g_batt_mv); u8g2_DrawStr(g, 8, 136, b);
         snprintf(b, sizeof(b), "Uptime  %lu s", (unsigned long)(esp_timer_get_time() / 1000000)); u8g2_DrawStr(g, 8, 158, b);
         snprintf(b, sizeof(b), "Reset   %s", reset_reason_str(esp_reset_reason())); u8g2_DrawStr(g, 8, 180, b);
-        snprintf(b, sizeof(b), "Audio   16k stereo + mic"); u8g2_DrawStr(g, 8, 202, b);
+        snprintf(b, sizeof(b), "RTC     %s", g_rtc_ok ? "PCF85063A OK" : "not found"); u8g2_DrawStr(g, 8, 202, b);
         snprintf(b, sizeof(b), "UI      6 items / 2 pages"); u8g2_DrawStr(g, 8, 224, b);
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
