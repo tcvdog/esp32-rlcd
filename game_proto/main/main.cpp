@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -56,6 +57,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "fw_version.h"
 #include "win_glyphs.h"
 #include "menu_glyphs.h"
+#include "word_cards.h"
 
 #include "ink_effect_frames.h"
 
@@ -467,6 +469,7 @@ static int g_music_files[24];
 static bool g_music_autoplay = false;
 static volatile bool g_track_finished = false;
 static int g_word_idx = 0;
+static int g_word_level = 0; // 0 KET, 1 PET
 static bool g_word_reveal = false;
 static float g_back_hold = 0.0f;
 
@@ -1917,7 +1920,8 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
         httpd_query_key_value(q, "enter", e, sizeof(e)) == ESP_OK &&
         strcmp(e, "1") == 0) {
-        if (sel == 2) g_mode = MODE_PHYSICS;
+        if (sel == 1) { g_word_level = 0; g_word_idx = 0; g_word_reveal = true; g_mode = MODE_WORD; }
+        else if (sel == 2) g_mode = MODE_PHYSICS;
         else if (sel == 3) files_enter();
         else if (sel == 4) music_enter();
         else if (sel == 5) g_mode = MODE_SETTINGS;
@@ -3140,47 +3144,75 @@ static void handleMenuInput() {
     prevIn = in;
 }
 
-struct WordCard { const char *en; const ZhGlyph *zh; };
-static const WordCard g_words[] = {
-    { "APPLE",  &ZH_APPLE  },
-    { "BANANA", &ZH_BANANA },
-    { "CAT",    &ZH_CAT    },
-    { "DOG",    &ZH_DOG    },
-    { "BOOK",   &ZH_BOOK   },
-    { "WATER",  &ZH_WATER  },
-};
-static constexpr int WORD_COUNT = 6;
+static const WordCard *word_card_at(int level, int idx) {
+    const char *want = level ? "PET" : "KET";
+    int n = 0;
+    for (int i = 0; i < WORD_COUNT; ++i) {
+        if (strcmp(WORD_CARDS[i].level, want) != 0) continue;
+        if (n == idx) return &WORD_CARDS[i];
+        ++n;
+    }
+    return &WORD_CARDS[0];
+}
 
 static void drawWord() {
     drawStatus();
-    drawZhCentered(MENU_WORD, 42);
+    drawZhCentered(MENU_WORD, 40);
 
-    const WordCard &w = g_words[g_word_idx];
+    const WordCard &w = *word_card_at(g_word_level, g_word_idx);
+
+    char upper[32];
+    size_t n = strlen(w.en);
+    if (n >= sizeof(upper)) n = sizeof(upper) - 1;
+    for (size_t i = 0; i < n; ++i) upper[i] = (char)toupper((unsigned char)w.en[i]);
+    upper[n] = 0;
+
     u8g2_SetFont(g, u8g2_font_10x20_tf);
-    int ew = u8g2_GetStrWidth(g, w.en);
-    u8g2_DrawStr(g, (SCREEN_W - ew) / 2, 106, w.en);
+    int ew = u8g2_GetStrWidth(g, upper);
+    u8g2_DrawStr(g, (SCREEN_W - ew) / 2, 100, upper);
 
     if (g_word_reveal) {
-        drawZhCentered(*w.zh, 132);
+        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+        int zw = u8g2_GetUTF8Width(g, w.zh);
+        u8g2_DrawUTF8(g, (SCREEN_W - zw) / 2, 128, w.zh);
     } else {
-        u8g2_SetFont(g, u8g2_font_9x15_tf);
-        const char *hint = "A: REVEAL";
-        int hw = u8g2_GetStrWidth(g, hint);
-        u8g2_DrawStr(g, (SCREEN_W - hw) / 2, 155, hint);
+        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+        const char *hint = "按 A 显示中文";
+        int hw = u8g2_GetUTF8Width(g, hint);
+        u8g2_DrawUTF8(g, (SCREEN_W - hw) / 2, 126, hint);
     }
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char idx[16];
-    snprintf(idx, sizeof(idx), "%d / %d", g_word_idx + 1, WORD_COUNT);
-    u8g2_DrawStr(g, (SCREEN_W - u8g2_GetStrWidth(g, idx)) / 2, 210, idx);
-    u8g2_DrawStr(g, 8, 270, "LEFT/RIGHT NEXT    A REVEAL");
-    u8g2_DrawStr(g, 8, 288, "SW: BACK");
+    u8g2_DrawHLine(g, 10, 140, SCREEN_W - 20);
+
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 8, 158, "例句");
+
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    draw_wrapped_utf8(w.sentence, 8, 176, 384, 15, 2);
+
+    if (g_word_reveal) {
+        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+        draw_wrapped_utf8(w.sentence_zh, 8, 222, 384, 16, 2);
+    }
+
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    char idx[40];
+    snprintf(idx, sizeof(idx), "%s  %d / 100", w.level, g_word_idx + 1);
+    u8g2_DrawStr(g, 8, 258, idx);
+
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    const char *keys = "上下 KET/PET  左右换句  A释义  SW返回";
+    int kw = u8g2_GetUTF8Width(g, keys);
+    u8g2_DrawUTF8(g, (SCREEN_W - kw) / 2, 284, keys);
 }
 
 static void handleWordInput() {
     if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
+    if (in.up && !prevIn.up) { g_word_level = 0; g_word_idx = 0; g_word_reveal = false; }
+    if (in.down && !prevIn.down) { g_word_level = 1; g_word_idx = 0; g_word_reveal = false; }
     if ((in.x < 0 && prevIn.x >= 0) || (in.x > 0 && prevIn.x <= 0)) {
-        g_word_idx = (g_word_idx + (in.x > 0 ? 1 : WORD_COUNT - 1)) % WORD_COUNT;
+        g_word_idx = (g_word_idx + (in.x > 0 ? 1 : 99)) % 100;
         g_word_reveal = false;
     }
     prevIn = in;

@@ -4,7 +4,7 @@ import sys, wave, audioop
 import numpy as np
 
 def _read(path):
-    with wave.open(path, 'rb') as w:
+    with wave.open(str(path), 'rb') as w:
         sr, ch, sw = w.getframerate(), w.getnchannels(), w.getsampwidth()
         data = w.readframes(w.getnframes())
     if sw != 2:

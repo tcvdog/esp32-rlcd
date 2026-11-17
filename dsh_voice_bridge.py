@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent
 TOKEN_FILE = pathlib.Path.home() / '.dsh' / 'web-ui-url.txt'
-TITLE = os.environ.get('DSH_VOICE_SESSION_TITLE', '你是一个擅长')
+TITLE = os.environ.get('DSH_VOICE_SESSION_TITLE', 'esp32RLCD')
 
 def main(text):
     url = TOKEN_FILE.read_text().strip()
@@ -15,13 +15,17 @@ def main(text):
         page = b.new_page(viewport={'width': 1200, 'height': 850})
         page.goto(url, wait_until='domcontentloaded', timeout=30000)
         page.wait_for_timeout(3500)
-        # The most recent session is the first sidebar entry; prefer the known title.
-        loc = page.get_by_text(TITLE, exact=False)
-        if loc.count() == 0:
-            loc = page.get_by_text('你是一个', exact=False)
-        if loc.count() > 0:
-            loc.first.click()
-            page.wait_for_timeout(2500)
+        # Wait for the sidebar tree to load, then click the exact session row.
+        loc = page.locator('[role="treeitem"]').filter(has_text=TITLE)
+        try:
+            loc.first.wait_for(state='visible', timeout=20000)
+        except Exception:
+            print('session row not found:', TITLE, flush=True)
+            page.screenshot(path='/tmp/dsh_voice_no_session.png')
+            b.close()
+            return 2
+        loc.first.click()
+        page.wait_for_timeout(2500)
         box = page.locator('[contenteditable="true"]').first
         box.click()
         box.fill(text)
