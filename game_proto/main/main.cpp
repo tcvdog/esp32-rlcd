@@ -432,7 +432,7 @@ static float qcfDownAt = -10.0f;
 static int lastTapDir = 0;
 static float lastTapAt = -10.0f;
 
-enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12 };
+enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14 };
 static int g_mode = MODE_MENU;
 static int g_menu_sel = 0;
 static uint8_t g_volume = 100;
@@ -446,6 +446,7 @@ static char g_wifi_pass[65] = "";
 static int g_key_page = 0, g_key_sel = 0;
 static int g_file_count = 0, g_file_sel = 0, g_file_view = 0;
 static int g_info_page = 0;
+static int g_settings_sel = 0;
 static char g_file_names[24][40];
 static uint32_t g_file_sizes[24];
 static char g_file_title[40];
@@ -458,6 +459,10 @@ static bool g_file_is_mp3 = false, g_file_is_gif = false;
 static volatile bool g_mp3_playing = false, g_mp3_stop = false;
 static volatile uint32_t g_mp3_pos = 0, g_mp3_total = 0;
 static uint8_t *g_img_gray = nullptr;
+static int g_music_count = 0, g_music_sel = 0;
+static int g_music_files[24];
+static bool g_music_autoplay = false;
+static volatile bool g_track_finished = false;
 static int g_word_idx = 0;
 static bool g_word_reveal = false;
 static float g_back_hold = 0.0f;
@@ -1884,6 +1889,8 @@ static esp_err_t ota_note_post(httpd_req_t *req) {
 }
 
 static void files_enter();
+static void music_enter();
+static void music_stop();
 static esp_err_t ota_menu_get(httpd_req_t *req) {
     char q[64] = {0};
     char v[16] = {0};
@@ -1892,22 +1899,17 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
         httpd_query_key_value(q, "sel", v, sizeof(v)) == ESP_OK) {
         sel = atoi(v);
     }
-    if (sel < 0 || sel > 8) sel = 0;
+    if (sel < 0 || sel > 5) sel = 0;
     g_menu_sel = sel;
     g_mode = MODE_MENU;
     char e[8] = {0};
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
         httpd_query_key_value(q, "enter", e, sizeof(e)) == ESP_OK &&
         strcmp(e, "1") == 0) {
-        if (sel == 4) g_mode = MODE_FEEDBACK;
-        else if (sel == 5) {
-            g_mode = MODE_INFO;
-            char pg[8] = {0};
-            if (httpd_query_key_value(q, "page", pg, sizeof(pg)) == ESP_OK) g_info_page = atoi(pg) % 3;
-        }
-        else if (sel == 6) g_mode = MODE_HELP;
-        else if (sel == 7) files_enter();
-        else if (sel == 8) g_mode = MODE_SETTINGS;
+        if (sel == 2) g_mode = MODE_PHYSICS;
+        else if (sel == 3) files_enter();
+        else if (sel == 4) music_enter();
+        else if (sel == 5) g_mode = MODE_SETTINGS;
     }
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
@@ -1940,6 +1942,8 @@ static esp_err_t ota_feedback_post(httpd_req_t *req) {
 
 static void wifi_scan_now();
 static void files_enter();
+static void music_enter();
+static void music_stop();
 static void files_preview();
 static void wav_start_playback();
 static void mp3_start_playback();
@@ -1947,6 +1951,8 @@ static void image_view_file();
 static int utf8_len(unsigned char c);
 static void goBack();
 static void files_enter();
+static void music_enter();
+static void music_stop();
 static esp_err_t ota_back_get(httpd_req_t *req) {
     goBack();
     httpd_resp_sendstr(req, "OK");
@@ -2195,7 +2201,7 @@ static void ota_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *d
         esp_wifi_connect();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         g_wifi_sta = false;
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        // Do not block the WiFi event task. The driver/IDF retry policy handles backoff.
         esp_wifi_connect();
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)data;
@@ -2234,8 +2240,12 @@ static void ota_start(void) {
         ret = nvs_flash_init();
     }
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "nvs init failed: %s", esp_err_to_name(ret));
-        return;
+        ESP_LOGW(TAG, "nvs init failed (%s), trying erase", esp_err_to_name(ret));
+        nvs_flash_erase();
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "nvs init still failed: %s; continuing with fallback", esp_err_to_name(ret));
     }
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -2421,7 +2431,7 @@ static void drawInfo() {
         snprintf(b, sizeof(b), "Uptime  %lu s", (unsigned long)(esp_timer_get_time() / 1000000)); u8g2_DrawStr(g, 8, 158, b);
         snprintf(b, sizeof(b), "Reset   %s", reset_reason_str(esp_reset_reason())); u8g2_DrawStr(g, 8, 180, b);
         snprintf(b, sizeof(b), "Audio   16k stereo + mic"); u8g2_DrawStr(g, 8, 202, b);
-        snprintf(b, sizeof(b), "UI      9 items / 3 pages"); u8g2_DrawStr(g, 8, 224, b);
+        snprintf(b, sizeof(b), "UI      6 items / 2 pages"); u8g2_DrawStr(g, 8, 224, b);
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     snprintf(b, sizeof(b), "PAGE %d/3   UP/DOWN", g_info_page + 1); u8g2_DrawStr(g, 8, 252, b);
@@ -2503,6 +2513,7 @@ static void wav_play_task(void *) {
     }
     fclose(f);
     g_wav_playing = false;
+    g_track_finished = true;
     vTaskDelete(NULL);
 }
 
@@ -2510,6 +2521,7 @@ static void wav_start_playback() {
     if (g_wav_playing) { g_wav_stop = true; return; }
     g_wav_stop = false;
     g_wav_pos = 0;
+    g_track_finished = false;
     g_wav_playing = true;
     xTaskCreate(wav_play_task, "wav_play", 16384, NULL, 3, NULL);
 }
@@ -2579,6 +2591,7 @@ static void mp3_play_task(void *) {
     if (outn > 0) g_codec->CodecPort_PlayWrite(out, outn * 4);
     free(data);
     g_mp3_playing = false;
+    g_track_finished = true;
     vTaskDelete(NULL);
 }
 
@@ -2586,6 +2599,7 @@ static void mp3_start_playback() {
     if (g_mp3_playing) { g_mp3_stop = true; return; }
     g_mp3_stop = false;
     g_mp3_pos = 0;
+    g_track_finished = false;
     g_mp3_playing = true;
     xTaskCreate(mp3_play_task, "mp3_play", 32768, NULL, 3, NULL);
 }
@@ -2770,6 +2784,104 @@ static void handleFilesInput() {
 }
 
 
+static bool music_is_audio(const char *name) {
+    int n = strlen(name);
+    return (n > 4 && strcasecmp(name + n - 4, ".mp3") == 0) ||
+           (n > 4 && strcasecmp(name + n - 4, ".wav") == 0);
+}
+
+static void music_scan() {
+    files_scan();
+    g_music_count = 0;
+    for (int i = 0; i < g_file_count && g_music_count < 24; ++i)
+        if (music_is_audio(g_file_names[i])) g_music_files[g_music_count++] = i;
+    if (g_music_sel >= g_music_count) g_music_sel = 0;
+}
+
+static void music_stop() {
+    g_music_autoplay = false;
+    g_wav_stop = true;
+    g_mp3_stop = true;
+    g_track_finished = false;
+}
+
+static void music_enter() {
+    wav_stop_playback();
+    if (g_mp3_playing) g_mp3_stop = true;
+    music_scan();
+    g_music_autoplay = false;
+    g_track_finished = false;
+    g_mode = MODE_MUSIC;
+}
+
+static void music_play_selected() {
+    if (g_music_count <= 0) return;
+    wav_stop_playback();
+    if (g_mp3_playing) g_mp3_stop = true;
+    g_file_sel = g_music_files[g_music_sel];
+    g_music_autoplay = true;
+    g_track_finished = false;
+    if (strcasecmp(g_file_names[g_file_sel] + strlen(g_file_names[g_file_sel]) - 4, ".wav") == 0)
+        wav_start_playback();
+    else
+        mp3_start_playback();
+}
+
+static void drawMusic() {
+    drawStatus();
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 150, 34, "音乐播放器");
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    char b[64];
+    if (g_music_count == 0) {
+        u8g2_DrawStr(g, 16, 76, "No MP3/WAV on SD card");
+        u8g2_DrawStr(g, 8, 292, "SW: BACK");
+        return;
+    }
+    bool playing = g_wav_playing || g_mp3_playing;
+    snprintf(b, sizeof(b), "TRACK %d/%d", g_music_sel + 1, g_music_count);
+    u8g2_DrawStr(g, 16, 58, b);
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    draw_wrapped_utf8(g_file_names[g_music_files[g_music_sel]], 16, 82, 360, 16, 1);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 16, 110, playing ? "PLAYING" : "STOP");
+    int pos = g_mp3_playing ? g_mp3_pos : g_wav_pos;
+    int total = g_mp3_playing ? g_mp3_total : g_wav_total;
+    int pct = total ? (int)((uint64_t)pos * 100 / total) : 0;
+    u8g2_DrawFrame(g, 16, 126, 360, 16);
+    u8g2_DrawBox(g, 18, 128, 356 * pct / 100, 12);
+    snprintf(b, sizeof(b), "%d%%", pct);
+    u8g2_DrawStr(g, 16, 158, b);
+    for (int i = 0; i < g_music_count && i < 5; ++i) {
+        int y = 186 + i * 20;
+        snprintf(b, sizeof(b), "%d  %.28s", i + 1, g_file_names[g_music_files[i]]);
+        if (i == g_music_sel) u8g2_DrawFrame(g, 10, y - 13, 380, 18);
+        u8g2_DrawStr(g, 16, y, b);
+    }
+    u8g2_DrawStr(g, 8, 288, "A PLAY/STOP  L/R PREV/NEXT  SW BACK");
+}
+
+static void handleMusicInput() {
+    if (g_track_finished && g_music_autoplay) {
+        g_track_finished = false;
+        g_music_sel = (g_music_sel + 1) % (g_music_count > 0 ? g_music_count : 1);
+        music_play_selected();
+    }
+    if (g_music_count == 0) { prevIn = in; return; }
+    if (in.up && !prevIn.up) g_music_sel = (g_music_sel + g_music_count - 1) % g_music_count;
+    if (in.down && !prevIn.down) g_music_sel = (g_music_sel + 1) % g_music_count;
+    if (in.x < 0 && prevIn.x >= 0) g_music_sel = (g_music_sel + g_music_count - 1) % g_music_count;
+    if (in.x > 0 && prevIn.x <= 0) g_music_sel = (g_music_sel + 1) % g_music_count;
+    bool changed = (in.up && !prevIn.up) || (in.down && !prevIn.down) ||
+                   (in.x < 0 && prevIn.x >= 0) || (in.x > 0 && prevIn.x <= 0);
+    if (changed && (g_wav_playing || g_mp3_playing)) { music_stop(); music_play_selected(); }
+    if (in.k3 && !prevIn.k3) {
+        if (g_wav_playing || g_mp3_playing) music_stop();
+        else music_play_selected();
+    }
+    prevIn = in;
+}
+
 static void drawImage() {
     drawStatus();
     if (!g_img_gray) return;
@@ -2830,18 +2942,15 @@ static void drawMenu() {
     drawStatus();
     drawZhCentered(MULU, 28);
 
-    const ZhGlyph *labels[9] = { &MENU_GAME, &MENU_WORD, &MENU_VOICE, &MENU_FEEDBACK, &MENU_PHYSICS, &MENU_INFO, &MENU_HELP, &MENU_SD, &MENU_SET };
-    const char *numbers[9] = { "01", "02", "03", "04", "05", "06", "07", "08", "09" };
-    const char *desc[9] = {
+    const ZhGlyph *labels[6] = { &MENU_GAME, &MENU_WORD, &MENU_PHYSICS, &MENU_SD, &MENU_MUSIC, &MENU_SET };
+    const char *numbers[6] = { "01", "02", "03", "04", "05", "06" };
+    const char *desc[6] = {
         "火柴人对战 · 动作与连招",
         "单词卡 · 记忆与复习",
-        "C+D 按住说话 · 60s 命令",
-        "语音命令 · 执行反馈",
         "初中 / 高中 物理实验",
-        "版本 · 电量 · 网络 · SD",
-        "摇杆 / 按键 / 返回",
-        "SD 卡文件 · WAV · TXT",
-        "音量 · 亮度 · Wi-Fi"
+        "SD 卡文件 · 音乐 · 图片",
+        "MP3 / WAV 歌曲播放器",
+        "系统 · 语音 · Wi-Fi · 帮助"
     };
 
     const int per_page = 4;
@@ -2850,12 +2959,12 @@ static void drawMenu() {
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     char pagebuf[16];
-    snprintf(pagebuf, sizeof(pagebuf), "%d / 3", page + 1);
+    snprintf(pagebuf, sizeof(pagebuf), "%d / 2", page + 1);
     u8g2_DrawStr(g, 342, 28, pagebuf);
 
     for (int i = 0; i < per_page; ++i) {
         int item = page * per_page + i;
-        if (item >= 9) break;
+        if (item >= 6) break;
         int y = 60 + i * 44;
         u8g2_SetFont(g, u8g2_font_9x15_tf);
         u8g2_DrawStr(g, 36, y + 24, numbers[item]);
@@ -2871,8 +2980,8 @@ static void drawMenu() {
     u8g2_DrawUTF8(g, (400 - tw) / 2, 244, desc[g_menu_sel]);
 
     // Page dots.
-    for (int i = 0; i < 3; ++i) {
-        int x = 180 + i * 20;
+    for (int i = 0; i < 2; ++i) {
+        int x = 190 + i * 20;
         if (i == page) u8g2_DrawDisc(g, x, 258, 4, U8G2_DRAW_ALL);
         else u8g2_DrawCircle(g, x, 258, 3, U8G2_DRAW_ALL);
     }
@@ -2888,16 +2997,16 @@ static void handleMenuInput() {
     int page = g_menu_sel / per_page;
     int slot = g_menu_sel % per_page;
     int page_start = page * per_page;
-    int page_items = 9 - page_start;
+    int page_items = 6 - page_start;
     if (page_items > 4) page_items = 4;
 
     if (in.x < 0 && prevIn.x >= 0) {
-        page = (page + 2) % 3;
+        page = (page + 1) % 2;
         slot = 0;
         g_menu_sel = page * per_page;
     }
     if (in.x > 0 && prevIn.x <= 0) {
-        page = (page + 1) % 3;
+        page = (page + 1) % 2;
         slot = 0;
         g_menu_sel = page * per_page;
     }
@@ -2920,23 +3029,16 @@ static void handleMenuInput() {
             g_word_reveal = false;
             g_mode = MODE_WORD;
         } else if (g_menu_sel == 2) {
-            g_voice_state = 0;
-            snprintf(g_voice_msg, sizeof(g_voice_msg), "C+D HOLD: TALK 60s");
-            g_mode = MODE_VOICE;
-        } else if (g_menu_sel == 3) {
-            g_mode = MODE_FEEDBACK;
-        } else if (g_menu_sel == 4) {
             g_phys_view = 0;
             g_phys_cat = 0;
             g_phys_sel = 0;
             g_mode = MODE_PHYSICS;
-        } else if (g_menu_sel == 5) {
-            g_mode = MODE_INFO;
-        } else if (g_menu_sel == 6) {
-            g_mode = MODE_HELP;
-        } else if (g_menu_sel == 7) {
+        } else if (g_menu_sel == 3) {
             files_enter();
+        } else if (g_menu_sel == 4) {
+            music_enter();
         } else {
+            g_settings_sel = 0;
             g_mode = MODE_SETTINGS;
         }
     }
@@ -3028,6 +3130,8 @@ static void drawFader(int x, int y, int w, int value, int maxv, bool selected) {
 
 static void wifi_scan_now();
 static void files_enter();
+static void music_enter();
+static void music_stop();
 static void files_preview();
 static void wav_start_playback();
 static void mp3_start_playback();
@@ -3036,15 +3140,56 @@ static int utf8_len(unsigned char c);
 static void goBack();
 static void wifi_enter();
 
-static void drawSettings() {
+static void drawSettingsMenu() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 176, 38, "设置");
+    u8g2_DrawUTF8(g, 176, 30, "设置");
 
+    const ZhGlyph *labels[6] = { &MENU_AV, &MENU_SET, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
+    for (int i = 0; i < 6; ++i) {
+        int y = 58 + i * 32;
+        if (i == g_settings_sel) u8g2_DrawFrame(g, 42, y - 17, 316, 27);
+        if (i == 1) {
+            u8g2_SetFont(g, u8g2_font_7x13_tf);
+            u8g2_DrawStr(g, 58, y + 3, "Wi-Fi");
+        } else {
+            drawZh(*labels[i], 58, y - 12);
+        }
+        if (i == 0) {
+            u8g2_SetFont(g, u8g2_font_7x13_tf);
+            u8g2_DrawStr(g, 170, y + 3, "volume / contrast");
+        }
+    }
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 8, 270, "UP/DOWN SELECT   A ENTER");
+    u8g2_DrawStr(g, 8, 290, "B: BACK   SW: BACK");
+}
+
+static void handleSettingsMenu() {
+    if (in.up && !prevIn.up) g_settings_sel = (g_settings_sel + 5) % 6;
+    if (in.down && !prevIn.down) g_settings_sel = (g_settings_sel + 1) % 6;
+    if (in.k3 && !prevIn.k3) {
+        switch (g_settings_sel) {
+            case 0: g_set_sel = 0; g_mode = MODE_SETTINGS_CTRL; break;
+            case 1: wifi_enter(); break;
+            case 2: g_mode = MODE_INFO; break;
+            case 3: g_mode = MODE_HELP; break;
+            case 4: notes_enter(); break;
+            case 5: g_mode = MODE_FEEDBACK; break;
+        }
+    }
+    if (in.k4 && !prevIn.k4) g_mode = MODE_MENU;
+    prevIn = in;
+}
+
+static void drawSettingsCtrl() {
+    drawStatus();
+    drawZhCentered(MENU_AV, 30);
+    char b[32];
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 24, 82, "音量");
     drawFader(100, 70, 260, g_volume, 100, g_set_sel == 0);
-    char b[32]; snprintf(b, sizeof(b), "%d%%", g_volume);
+    snprintf(b, sizeof(b), "%d%%", g_volume);
     u8g2_SetFont(g, u8g2_font_7x13_tf); u8g2_DrawStr(g, 366, 82, b);
 
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
@@ -3054,28 +3199,17 @@ static void drawSettings() {
     u8g2_SetFont(g, u8g2_font_7x13_tf); u8g2_DrawStr(g, 366, 136, b);
 
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 24, 190, "Wi-Fi 设置");
+    u8g2_DrawUTF8(g, 16, 190, "音量：真实 ES8311 输出");
+    u8g2_DrawUTF8(g, 16, 210, "亮度：ST7305 电子对比度");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 140, 190, g_ssid[0] ? g_ssid : "(not connected)");
-    if (g_set_sel == 2) u8g2_DrawFrame(g, 12, 176, 376, 22);
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 16, 216, "音量：真实 ES8311 输出");
-    u8g2_DrawUTF8(g, 16, 234, "亮度：ST7305 电子对比度");
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 254, "UP/DOWN SELECT  L/R ADJUST");
-    u8g2_DrawStr(g, 8, 272, "A: TEST / WIFI  SW: BACK");
-    u8g2_DrawStr(g, 8, 290, "B: RESET");
+    u8g2_DrawStr(g, 8, 244, "UP/DOWN SELECT   L/R ADJUST");
+    u8g2_DrawStr(g, 8, 266, "A: TEST TONE   B: RESET");
+    u8g2_DrawStr(g, 8, 288, "SW: BACK");
 }
 
-static void handleSettingsInput() {
-    if (in.up && !prevIn.up) g_set_sel = (g_set_sel + 2) % 3;
-    if (in.down && !prevIn.down) g_set_sel = (g_set_sel + 1) % 3;
-    if (g_set_sel == 2) {
-        if (in.k3 && !prevIn.k3) wifi_enter();
-        prevIn = in;
-        return;
-    }
+static void handleSettingsCtrl() {
+    if (in.up && !prevIn.up) g_set_sel = 0;
+    if (in.down && !prevIn.down) g_set_sel = 1;
     if (g_set_sel == 0) {
         if (in.x < 0 && prevIn.x >= 0) g_volume = (g_volume >= 5) ? g_volume - 5 : 0;
         if (in.x > 0 && prevIn.x <= 0) g_volume = (g_volume <= 95) ? g_volume + 5 : 100;
@@ -5992,6 +6126,12 @@ static void goBack() {
         return;
     }
     if (g_mode == MODE_WIFI) { g_mode = MODE_SETTINGS; return; }
+    if (g_mode == MODE_SETTINGS_CTRL) { g_mode = MODE_SETTINGS; return; }
+    if (g_mode == MODE_SETTINGS) { g_mode = MODE_MENU; return; }
+    if (g_mode == MODE_INFO || g_mode == MODE_HELP || g_mode == MODE_NOTES || g_mode == MODE_FEEDBACK) {
+        g_mode = MODE_SETTINGS; return;
+    }
+    if (g_mode == MODE_MUSIC) { music_stop(); g_mode = MODE_MENU; return; }
     if (g_mode == MODE_IMAGE) {
         if (g_img_gray) { heap_caps_free(g_img_gray); g_img_gray = nullptr; }
         g_mode = MODE_FILES;
@@ -6323,6 +6463,12 @@ static void gameTask(void *arg) {
             u8g2_SetDrawColor(g, 1);
             drawFeedback();
             presentFrame();
+        } else if (g_mode == MODE_MUSIC) {
+            handleMusicInput();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawMusic();
+            presentFrame();
         } else if (g_mode == MODE_IMAGE) {
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
@@ -6337,7 +6483,7 @@ static void gameTask(void *arg) {
         } else if (g_mode == MODE_INFO || g_mode == MODE_HELP) {
             if (g_mode == MODE_INFO && in.up && !prevIn.up) g_info_page = (g_info_page + 2) % 3;
             if (g_mode == MODE_INFO && in.down && !prevIn.down) g_info_page = (g_info_page + 1) % 3;
-            if (g_mode == MODE_INFO && in.k4 && !prevIn.k4) { g_mode = MODE_MENU; prevIn = in; }
+            if (g_mode == MODE_INFO && in.k4 && !prevIn.k4) { g_mode = MODE_SETTINGS; prevIn = in; }
             if (updateBackChord(realDt)) {
                 g_mode = MODE_MENU;
                 prevIn = in;
@@ -6354,20 +6500,17 @@ static void gameTask(void *arg) {
             drawWifi();
             presentFrame();
         } else if (g_mode == MODE_SETTINGS) {
-            if (updateBackChord(realDt)) {
-                g_mode = MODE_MENU;
-                prevIn = in;
-                u8g2_ClearBuffer(g);
-                u8g2_SetDrawColor(g, 1);
-                drawMenu();
-                presentFrame();
-            } else {
-                handleSettingsInput();
-                u8g2_ClearBuffer(g);
-                u8g2_SetDrawColor(g, 1);
-                drawSettings();
-                presentFrame();
-            }
+            handleSettingsMenu();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawSettingsMenu();
+            presentFrame();
+        } else if (g_mode == MODE_SETTINGS_CTRL) {
+            handleSettingsCtrl();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawSettingsCtrl();
+            presentFrame();
         } else {
             if (updateBackChord(realDt)) {
                 g_mode = MODE_MENU;
@@ -6516,10 +6659,11 @@ extern "C" void app_main(void) {
 #else
     audio_init();
     audio_open_late();
-    BaseType_t ok = xTaskCreatePinnedToCore(gameTask, "game", 16384, NULL, 4, NULL, 1);
-    configASSERT(ok == pdPASS);
+    // NVS and WiFi must be initialized before the UI task calls settings_load().
     g_ota_started = true;
     ota_start();
+    BaseType_t ok = xTaskCreatePinnedToCore(gameTask, "game", 16384, NULL, 4, NULL, 1);
+    configASSERT(ok == pdPASS);
     sd_ensure();
     if (g_sd_ok) cleanup_temp_files();
     g_cap_q = xQueueCreate(16, CAP_PATH_LEN);
