@@ -437,7 +437,7 @@ static float qcfDownAt = -10.0f;
 static int lastTapDir = 0;
 static float lastTapAt = -10.0f;
 
-enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14 };
+enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15 };
 static int g_mode = MODE_MENU;
 static int g_menu_sel = 0;
 static uint8_t g_volume = 100;
@@ -470,6 +470,7 @@ static bool g_music_autoplay = false;
 static volatile bool g_track_finished = false;
 static int g_word_idx = 0;
 static int g_word_level = 0; // 0 KET, 1 PET
+static int g_word_cat_sel = 0;
 static bool g_word_reveal = false;
 static float g_back_hold = 0.0f;
 
@@ -1920,7 +1921,16 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
         httpd_query_key_value(q, "enter", e, sizeof(e)) == ESP_OK &&
         strcmp(e, "1") == 0) {
-        if (sel == 1) { g_word_level = 0; g_word_idx = 0; g_word_reveal = true; g_mode = MODE_WORD; }
+        if (sel == 1) {
+            g_word_cat_sel = 0;
+            char lv[8] = {0};
+            if (httpd_query_key_value(q, "level", lv, sizeof(lv)) == ESP_OK) {
+                g_word_level = atoi(lv) ? 1 : 0;
+                g_word_idx = 0;
+                g_word_reveal = true;
+                g_mode = MODE_WORD;
+            } else g_mode = MODE_WORD_MENU;
+        }
         else if (sel == 2) g_mode = MODE_PHYSICS;
         else if (sel == 3) files_enter();
         else if (sel == 4) music_enter();
@@ -3124,9 +3134,8 @@ static void handleMenuInput() {
             g_hitStop = 0; g_shake = 0; g_shakeX = g_shakeY = 0;
             g_mode = MODE_GAME;
         } else if (g_menu_sel == 1) {
-            g_word_idx = 0;
-            g_word_reveal = false;
-            g_mode = MODE_WORD;
+            g_word_cat_sel = 0;
+            g_mode = MODE_WORD_MENU;
         } else if (g_menu_sel == 2) {
             g_phys_view = 0;
             g_phys_cat = 0;
@@ -3140,6 +3149,38 @@ static void handleMenuInput() {
             g_settings_sel = 0;
             g_mode = MODE_SETTINGS;
         }
+    }
+    prevIn = in;
+}
+
+static void drawWordMenu() {
+    drawStatus();
+    drawZhCentered(MENU_WORD, 30);
+    const char *levels[2] = { "KET", "PET" };
+    const char *subs[2] = { "100 句 · 基础英语", "100 句 · 进阶英语" };
+    for (int i = 0; i < 2; ++i) {
+        int y = 88 + i * 72;
+        if (i == g_word_cat_sel) u8g2_DrawFrame(g, 40, y - 24, 320, 64);
+        u8g2_SetFont(g, u8g2_font_10x20_tf);
+        u8g2_DrawStr(g, 64, y + 8, levels[i]);
+        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+        u8g2_DrawUTF8(g, 150, y + 6, subs[i]);
+        u8g2_SetFont(g, u8g2_font_7x13_tf);
+        u8g2_DrawStr(g, 340, y + 8, i == 0 ? "1-100" : "1-100");
+    }
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 8, 272, "UP/DOWN SELECT   A ENTER");
+    u8g2_DrawStr(g, 8, 292, "SW: BACK");
+}
+
+static void handleWordMenu() {
+    if (in.up && !prevIn.up) g_word_cat_sel = (g_word_cat_sel + 1) % 2;
+    if (in.down && !prevIn.down) g_word_cat_sel = (g_word_cat_sel + 1) % 2;
+    if (in.k3 && !prevIn.k3) {
+        g_word_level = g_word_cat_sel;
+        g_word_idx = 0;
+        g_word_reveal = false;
+        g_mode = MODE_WORD;
     }
     prevIn = in;
 }
@@ -3189,7 +3230,11 @@ static void drawWord() {
     u8g2_DrawUTF8(g, 8, 158, "例句");
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    draw_wrapped_utf8(w.sentence, 8, 176, 384, 15, 2);
+    char sbuf[160];
+    snprintf(sbuf, sizeof(sbuf), "%s", w.sentence);
+    size_t sl = strlen(sbuf);
+    while (sl > 0 && (sbuf[sl-1] == '.' || sbuf[sl-1] == ' ')) sbuf[--sl] = 0;
+    draw_wrapped_utf8(sbuf, 8, 176, 384, 13, 3);
 
     if (g_word_reveal) {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
@@ -6253,6 +6298,8 @@ static void goBack() {
         return;
     }
     if (g_mode == MODE_WIFI) { g_mode = MODE_SETTINGS; return; }
+    if (g_mode == MODE_WORD) { g_mode = MODE_WORD_MENU; return; }
+    if (g_mode == MODE_WORD_MENU) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_SETTINGS_CTRL) { g_mode = MODE_SETTINGS; return; }
     if (g_mode == MODE_SETTINGS) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_INFO || g_mode == MODE_HELP || g_mode == MODE_NOTES || g_mode == MODE_FEEDBACK) {
@@ -6334,21 +6381,18 @@ static void gameTask(void *arg) {
             u8g2_SetDrawColor(g, 1);
             drawMenu();
             presentFrame();
+        } else if (g_mode == MODE_WORD_MENU) {
+            handleWordMenu();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawWordMenu();
+            presentFrame();
         } else if (g_mode == MODE_WORD) {
-            if (updateBackChord(realDt)) {
-                g_mode = MODE_MENU;
-                prevIn = in;
-                u8g2_ClearBuffer(g);
-                u8g2_SetDrawColor(g, 1);
-                drawMenu();
-                presentFrame();
-            } else {
-                handleWordInput();
-                u8g2_ClearBuffer(g);
-                u8g2_SetDrawColor(g, 1);
-                drawWord();
-                presentFrame();
-            }
+            handleWordInput();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawWord();
+            presentFrame();
         } else if (g_mode == MODE_VOICE) {
             if (updateBackChord(realDt)) {
                 g_mode = MODE_MENU;
