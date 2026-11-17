@@ -440,6 +440,8 @@ static float lastTapAt = -10.0f;
 enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15 };
 static int g_mode = MODE_MENU;
 static int g_menu_sel = 0;
+static int g_secret_step = 0;
+static int64_t g_secret_t = 0;
 static uint8_t g_volume = 100;
 static uint8_t g_contrast = 128;
 static int g_set_sel = 0;
@@ -3406,13 +3408,13 @@ static void drawSettingsMenu() {
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 176, 32, "设置");
 
-    const ZhGlyph *glyphs[7] = { &MENU_GAME, &MENU_AV, nullptr, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
-    const char *subs[7] = {
-        "动作 / 对战", "音量 / 亮度", "扫描 / 密码", "3 页信息",
+    const ZhGlyph *glyphs[6] = { &MENU_AV, nullptr, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
+    const char *subs[6] = {
+        "音量 / 亮度", "扫描 / 密码", "3 页信息",
         "摇杆 / 按键", "录音记录", "执行反馈"
     };
     const int cw = 186, ch = 50;
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 6; ++i) {
         int col = i % 2, row = i / 2;
         int x = 8 + col * 198;
         int y = 46 + row * 55;
@@ -3422,7 +3424,7 @@ static void drawSettingsMenu() {
         } else {
             u8g2_DrawFrame(g, x, y, cw, ch);
         }
-        if (i == 2) {
+        if (i == 1) {
             u8g2_SetFont(g, u8g2_font_10x20_tf);
             int w = u8g2_GetStrWidth(g, "Wi-Fi");
             u8g2_DrawStr(g, x + (cw - w) / 2, y + 28, "Wi-Fi");
@@ -3441,18 +3443,17 @@ static void drawSettingsMenu() {
 
 static void handleSettingsMenu() {
     if (in.up && !prevIn.up) { g_settings_sel = (g_settings_sel >= 2) ? g_settings_sel - 2 : g_settings_sel; }
-    if (in.down && !prevIn.down) { if (g_settings_sel + 2 < 7) g_settings_sel += 2; }
+    if (in.down && !prevIn.down) { if (g_settings_sel + 2 < 6) g_settings_sel += 2; }
     if (in.x < 0 && prevIn.x >= 0) { if ((g_settings_sel & 1) && g_settings_sel > 0) --g_settings_sel; }
-    if (in.x > 0 && prevIn.x <= 0) { if (!(g_settings_sel & 1) && g_settings_sel + 1 < 7) ++g_settings_sel; }
+    if (in.x > 0 && prevIn.x <= 0) { if (!(g_settings_sel & 1) && g_settings_sel + 1 < 6) ++g_settings_sel; }
     if (in.k3 && !prevIn.k3) {
         switch (g_settings_sel) {
-            case 0: resetGame(); g_hitStop = 0; g_shake = 0; g_shakeX = g_shakeY = 0; g_mode = MODE_GAME; break;
-            case 1: g_set_sel = 0; g_mode = MODE_SETTINGS_CTRL; break;
-            case 2: wifi_enter(); break;
-            case 3: g_mode = MODE_INFO; break;
-            case 4: g_mode = MODE_HELP; break;
-            case 5: notes_enter(); break;
-            case 6: g_mode = MODE_FEEDBACK; break;
+            case 0: g_set_sel = 0; g_mode = MODE_SETTINGS_CTRL; break;
+            case 1: wifi_enter(); break;
+            case 2: g_mode = MODE_INFO; break;
+            case 3: g_mode = MODE_HELP; break;
+            case 4: notes_enter(); break;
+            case 5: g_mode = MODE_FEEDBACK; break;
         }
     }
     if (in.k4 && !prevIn.k4) g_mode = MODE_MENU;
@@ -6407,7 +6408,7 @@ static void goBack() {
         return;
     }
     if (g_mode == MODE_WIFI) { g_mode = MODE_SETTINGS; return; }
-    if (g_mode == MODE_GAME) { g_mode = MODE_SETTINGS; return; }
+    if (g_mode == MODE_GAME) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_WORD) { g_mode = MODE_WORD_MENU; return; }
     if (g_mode == MODE_WORD_MENU) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_SETTINGS_CTRL) { g_mode = MODE_SETTINGS; return; }
@@ -6484,6 +6485,21 @@ static void gameTask(void *arg) {
         }
         buzzer_update();
 
+        // Hidden game launch: down -> right -> B within 1.2 s, no visible entry.
+        if (g_mode == MODE_MENU) {
+            int64_t now_us = esp_timer_get_time();
+            if (now_us - g_secret_t > 1500000LL) g_secret_step = 0;
+            if (in.down && !prevIn.down) { g_secret_step = 1; g_secret_t = now_us; }
+            else if (g_secret_step == 1 && in.x > 0 && prevIn.x <= 0) { g_secret_step = 2; g_secret_t = now_us; }
+            else if (g_secret_step == 2 && in.k4 && !prevIn.k4) {
+                g_secret_step = 0;
+                resetGame();
+                g_hitStop = 0; g_shake = 0; g_shakeX = g_shakeY = 0;
+                playSfx(2);
+                g_mode = MODE_GAME;
+                prevIn = in;
+            }
+        }
         if (g_mode == MODE_MENU) {
             g_back_hold = 0.0f;
             handleMenuInput();

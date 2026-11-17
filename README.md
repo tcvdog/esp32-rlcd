@@ -8,12 +8,12 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 - 400x300 1bpp retro stickman game
 - KET/PET sentence memory: 100 + 100 words with English/Chinese sentences
 - D-key sentence TTS: `/sdcard/tts/{ket,pet}_NNN.mp3` (generate with `tools/gen_sentence_tts.py`)
-- 5-item main menu; game moved into the settings submenu
+- 5-item main menu; game entry hidden (launch gesture documented only in source)
 - Word cards: 100 KET/PET words + 100 example sentences (6 basic review cards kept), Chinese meaning and sentence translation behind A
 - SD browser: TXT paging, WAV playback, MP3 playback, GIF/PNG/JPG/BMP first-frame viewing
 - Voice command C+D: WAV upload to PC, SenseVoice + Whisper dual ASR
 - PC bridge to the current DSH Web session
-- Settings submenu: 2-column card grid — game, sound, Wi-Fi, system info, help, voice notes, command feedback
+- Settings submenu: 2-column card grid — sound, Wi-Fi, system info, help, voice notes, command feedback
 - PCF85063A RTC + NVS time fallback
 - 3-page system information: software, memory/storage, network/power
 - Settings: speaker volume, ST7305 contrast, Wi-Fi scan and on-screen keyboard
