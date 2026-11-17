@@ -3210,46 +3210,47 @@ static void drawWord() {
 
     u8g2_SetFont(g, u8g2_font_10x20_tf);
     int ew = u8g2_GetStrWidth(g, upper);
-    u8g2_DrawStr(g, (SCREEN_W - ew) / 2, 100, upper);
+    u8g2_DrawStr(g, (SCREEN_W - ew) / 2, 92, upper);
 
     if (g_word_reveal) {
         u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
         int zw = u8g2_GetUTF8Width(g, w.zh);
-        u8g2_DrawUTF8(g, (SCREEN_W - zw) / 2, 128, w.zh);
+        u8g2_DrawUTF8(g, (SCREEN_W - zw) / 2, 120, w.zh);
     } else {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
         const char *hint = "按 A 显示中文";
         int hw = u8g2_GetUTF8Width(g, hint);
-        u8g2_DrawUTF8(g, (SCREEN_W - hw) / 2, 126, hint);
+        u8g2_DrawUTF8(g, (SCREEN_W - hw) / 2, 118, hint);
     }
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawHLine(g, 10, 140, SCREEN_W - 20);
+    u8g2_DrawHLine(g, 10, 132, SCREEN_W - 20);
 
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 8, 158, "例句");
+    u8g2_DrawUTF8(g, 8, 148, "例句");
 
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    // Larger 10x20 example sentence, max 3 lines.
+    u8g2_SetFont(g, u8g2_font_10x20_tf);
     char sbuf[160];
     snprintf(sbuf, sizeof(sbuf), "%s", w.sentence);
     size_t sl = strlen(sbuf);
     while (sl > 0 && (sbuf[sl-1] == '.' || sbuf[sl-1] == ' ')) sbuf[--sl] = 0;
-    draw_wrapped_utf8(sbuf, 8, 176, 384, 13, 3);
+    draw_wrapped_utf8(sbuf, 8, 168, 384, 20, 3);
 
     if (g_word_reveal) {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        draw_wrapped_utf8(w.sentence_zh, 8, 222, 384, 16, 2);
+        draw_wrapped_utf8(w.sentence_zh, 8, 238, 384, 16, 2);
     }
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     char idx[40];
     snprintf(idx, sizeof(idx), "%s  %d / 100", w.level, g_word_idx + 1);
-    u8g2_DrawStr(g, 8, 258, idx);
+    u8g2_DrawStr(g, 8, 270, idx);
 
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     const char *keys = "上下 KET/PET  左右换句  A释义  SW返回";
     int kw = u8g2_GetUTF8Width(g, keys);
-    u8g2_DrawUTF8(g, (SCREEN_W - kw) / 2, 284, keys);
+    u8g2_DrawUTF8(g, (SCREEN_W - kw) / 2, 292, keys);
 }
 
 static void handleWordInput() {
