@@ -7,6 +7,7 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 - Firmware: **v0.45.0**
 - 400x300 1bpp retro stickman game
 - KET/PET sentence memory: 100 + 100 words with English/Chinese sentences
+- D-key sentence TTS: `/sdcard/tts/{ket,pet}_NNN.mp3` (generate with `tools/gen_sentence_tts.py`)
 - 6-item / 2-page main menu with a direct **SD card** entry
 - Word cards: 100 KET/PET words + 100 example sentences (6 basic review cards kept), Chinese meaning and sentence translation behind A
 - SD browser: TXT paging, WAV playback, MP3 playback, GIF/PNG/JPG/BMP first-frame viewing

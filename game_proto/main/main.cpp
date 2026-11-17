@@ -463,6 +463,7 @@ static volatile uint32_t g_wav_pos = 0, g_wav_total = 0;
 static bool g_file_is_mp3 = false, g_file_is_gif = false;
 static volatile bool g_mp3_playing = false, g_mp3_stop = false;
 static volatile uint32_t g_mp3_pos = 0, g_mp3_total = 0;
+static char g_audio_path[300] = "";
 static uint8_t *g_img_gray = nullptr;
 static int g_music_count = 0, g_music_sel = 0;
 static int g_music_files[24];
@@ -1985,13 +1986,24 @@ static esp_err_t ota_back_get(httpd_req_t *req) {
 }
 
 static esp_err_t ota_upload_post(httpd_req_t *req) {
-    char q[96] = {0}, name[40] = {0};
+    char q[160] = {0}, name[80] = {0};
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK ||
         httpd_query_key_value(q, "name", name, sizeof(name)) != ESP_OK || !name[0]) {
         httpd_resp_sendstr(req, "name required"); return ESP_OK;
     }
-    char path[80];
+    char decoded[80] = {0};
+    for (int i = 0, j = 0; name[i] && j < (int)sizeof(decoded) - 1; ++i) {
+        if (name[i] == '%' && name[i+1] && name[i+2]) {
+            auto hex = [](char c) { return c >= '0' && c <= '9' ? c - '0' : (c >= 'A' && c <= 'F' ? c - 'A' + 10 : (c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1)); };
+            int a = hex(name[i+1]), b = hex(name[i+2]);
+            if (a >= 0 && b >= 0) { decoded[j++] = (char)((a << 4) | b); i += 2; continue; }
+        }
+        decoded[j++] = name[i];
+    }
+    snprintf(name, sizeof(name), "%s", decoded);
+    char path[300];
     snprintf(path, sizeof(path), "/sdcard/%s", name);
+    if (strncmp(name, "tts/", 4) == 0) mkdir("/sdcard/tts", 0777);
     FILE *f = fopen(path, "wb");
     if (!f) { httpd_resp_sendstr(req, "open failed"); return ESP_OK; }
     char buf[1024];
@@ -2003,6 +2015,23 @@ static esp_err_t ota_upload_post(httpd_req_t *req) {
         remaining -= n;
     }
     fclose(f);
+    httpd_resp_sendstr(req, "OK");
+    return ESP_OK;
+}
+
+static esp_err_t ota_wordaudio_get(httpd_req_t *req) {
+    char q[64] = {0}, lv[8] = {0}, ix[8] = {0};
+    int level = 0, idx = 1;
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        if (httpd_query_key_value(q, "level", lv, sizeof(lv)) == ESP_OK) level = atoi(lv);
+        if (httpd_query_key_value(q, "idx", ix, sizeof(ix)) == ESP_OK) idx = atoi(ix);
+    }
+    if (idx < 1 || idx > 100) idx = 1;
+    snprintf(g_audio_path, sizeof(g_audio_path), "/sdcard/tts/%s_%03d.mp3", level ? "pet" : "ket", idx);
+    FILE *f = fopen(g_audio_path, "rb");
+    if (!f) { httpd_resp_sendstr(req, "missing"); return ESP_OK; }
+    fclose(f);
+    mp3_start_playback();
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
 }
@@ -2400,7 +2429,7 @@ static void ota_start(void) {
 
     httpd_config_t hcfg = HTTPD_DEFAULT_CONFIG();
     hcfg.stack_size = 8192;
-    hcfg.max_uri_handlers = 16;
+    hcfg.max_uri_handlers = 24;
     hcfg.lru_purge_enable = true;
     httpd_handle_t server = NULL;
     if (httpd_start(&server, &hcfg) != ESP_OK) {
@@ -2417,6 +2446,7 @@ static void ota_start(void) {
     httpd_uri_t game = { .uri = "/game", .method = HTTP_GET, .handler = ota_game_get, .user_ctx = NULL };
     httpd_uri_t wifi = { .uri = "/wifi", .method = HTTP_GET, .handler = ota_wifi_get, .user_ctx = NULL };
     httpd_uri_t files = { .uri = "/files", .method = HTTP_GET, .handler = ota_files_get, .user_ctx = NULL };
+    httpd_uri_t wordaudio = { .uri = "/wordaudio", .method = HTTP_GET, .handler = ota_wordaudio_get, .user_ctx = NULL };
     httpd_uri_t back = { .uri = "/back", .method = HTTP_GET, .handler = ota_back_get, .user_ctx = NULL };
     httpd_uri_t upload = { .uri = "/upload", .method = HTTP_POST, .handler = ota_upload_post, .user_ctx = NULL };
     httpd_uri_t feedback = { .uri = "/feedback", .method = HTTP_POST, .handler = ota_feedback_post, .user_ctx = NULL };
@@ -2433,6 +2463,7 @@ static void ota_start(void) {
     httpd_register_uri_handler(server, &game);
     httpd_register_uri_handler(server, &wifi);
     httpd_register_uri_handler(server, &files);
+    httpd_register_uri_handler(server, &wordaudio);
     httpd_register_uri_handler(server, &back);
     httpd_register_uri_handler(server, &upload);
     httpd_register_uri_handler(server, &feedback);
@@ -2551,6 +2582,19 @@ static void drawInfo() {
 
 static void files_scan() {
     g_file_count = 0;
+    // Remove legacy upload names written as tts%2F... before URL decoding was fixed.
+    DIR *clean = opendir("/sdcard");
+    if (clean) {
+        struct dirent *ce;
+        while ((ce = readdir(clean)) != NULL) {
+            if (strstr(ce->d_name, "%2F")) {
+                char bad[300];
+                snprintf(bad, sizeof(bad), "/sdcard/%s", ce->d_name);
+                unlink(bad);
+            }
+        }
+        closedir(clean);
+    }
     DIR *d = opendir("/sdcard");
     if (!d) return;
     struct dirent *e;
@@ -2637,7 +2681,8 @@ static void wav_start_playback() {
 
 static void mp3_play_task(void *) {
     char path[300];
-    snprintf(path, sizeof(path), "/sdcard/%s", g_file_names[g_file_sel]);
+    if (g_audio_path[0]) snprintf(path, sizeof(path), "%s", g_audio_path);
+    else snprintf(path, sizeof(path), "/sdcard/%s", g_file_names[g_file_sel]);
     FILE *f = fopen(path, "rb");
     if (!f) { g_mp3_playing = false; vTaskDelete(NULL); return; }
     fseek(f, 0, SEEK_END);
@@ -2749,6 +2794,7 @@ static void files_free_text() {
 }
 
 static void files_enter() {
+    g_audio_path[0] = 0;
     wav_stop_playback();
     if (g_mp3_playing) g_mp3_stop = true;
     if (g_img_gray) { heap_caps_free(g_img_gray); g_img_gray = nullptr; }
@@ -2761,6 +2807,7 @@ static void files_enter() {
 
 static void files_preview() {
     if (g_file_sel < 0 || g_file_sel >= g_file_count) return;
+    g_audio_path[0] = 0;
     wav_stop_playback();
     if (g_mp3_playing) g_mp3_stop = true;
     if (g_img_gray) { heap_caps_free(g_img_gray); g_img_gray = nullptr; }
@@ -3196,6 +3243,35 @@ static const WordCard *word_card_at(int level, int idx) {
     return &WORD_CARDS[0];
 }
 
+static void draw_wrapped_english(const char *s, int x, int y, int maxw, int lineh, int maxlines) {
+    char line[512] = {0};
+    int lines = 0;
+    while (*s && lines < maxlines) {
+        while (*s == ' ') ++s;
+        if (!*s) break;
+        const char *ws = s;
+        while (*s && *s != ' ') ++s;
+        int wl = s - ws;
+        char word[96];
+        if (wl >= (int)sizeof(word)) wl = sizeof(word) - 1;
+        memcpy(word, ws, wl); word[wl] = 0;
+        char cand[512] = {0};
+        strncpy(cand, line, sizeof(cand) - 1);
+        if (cand[0]) strncat(cand, " ", sizeof(cand) - strlen(cand) - 1);
+        strncat(cand, word, sizeof(cand) - strlen(cand) - 1);
+        if (line[0] && u8g2_GetStrWidth(g, cand) > maxw) {
+            u8g2_DrawStr(g, x, y + lines * lineh, line);
+            ++lines;
+            strncpy(line, word, sizeof(line) - 1);
+            line[sizeof(line) - 1] = 0;
+        } else {
+            strncpy(line, cand, sizeof(line) - 1);
+            line[sizeof(line) - 1] = 0;
+        }
+    }
+    if (line[0] && lines < maxlines) u8g2_DrawStr(g, x, y + lines * lineh, line);
+}
+
 static void drawWord() {
     drawStatus();
     drawZhCentered(MENU_WORD, 40);
@@ -3235,7 +3311,7 @@ static void drawWord() {
     snprintf(sbuf, sizeof(sbuf), "%s", w.sentence);
     size_t sl = strlen(sbuf);
     while (sl > 0 && (sbuf[sl-1] == '.' || sbuf[sl-1] == ' ')) sbuf[--sl] = 0;
-    draw_wrapped_utf8(sbuf, 8, 168, 384, 20, 3);
+    draw_wrapped_english(sbuf, 8, 168, 384, 20, 3);
 
     if (g_word_reveal) {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
@@ -3248,13 +3324,30 @@ static void drawWord() {
     u8g2_DrawStr(g, 8, 270, idx);
 
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    const char *keys = "上下 KET/PET  左右换句  A释义  SW返回";
+    const char *keys = "上下分类 左右换句 A释义 D朗读 SW返回";
     int kw = u8g2_GetUTF8Width(g, keys);
     u8g2_DrawUTF8(g, (SCREEN_W - kw) / 2, 292, keys);
 }
 
+static void word_audio_toggle() {
+    if (g_mp3_playing) { g_mp3_stop = true; return; }
+    char path[64];
+    snprintf(path, sizeof(path), "/sdcard/tts/%s_%03d.mp3", g_word_level ? "pet" : "ket", g_word_idx + 1);
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        snprintf(g_fb_stage, sizeof(g_fb_stage), "无音频");
+        snprintf(g_fb_detail, sizeof(g_fb_detail), "缺少 %s，请先生成/上传 TTS。", path);
+        return;
+    }
+    fclose(f);
+    strncpy(g_audio_path, path, sizeof(g_audio_path) - 1);
+    g_audio_path[sizeof(g_audio_path) - 1] = 0;
+    mp3_start_playback();
+}
+
 static void handleWordInput() {
     if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
+    if (in.k4 && !prevIn.k4) word_audio_toggle();
     if (in.up && !prevIn.up) { g_word_level = 0; g_word_idx = 0; g_word_reveal = false; }
     if (in.down && !prevIn.down) { g_word_level = 1; g_word_idx = 0; g_word_reveal = false; }
     if ((in.x < 0 && prevIn.x >= 0) || (in.x > 0 && prevIn.x <= 0)) {
@@ -3845,7 +3938,11 @@ static void draw_wrapped_utf8(const char *s, int x, int y, int maxw, int lineh, 
             tlen += clen;
             tmp[tlen] = 0;
             int w = u8g2_GetUTF8Width(g, tmp);
-            if (w > maxw && tlen > clen) break;
+            if (w > maxw && tlen > clen) {
+                tlen -= clen;
+                tmp[tlen] = 0;
+                break;
+            }
             p += clen;
             last = p;
         }

@@ -28,3 +28,4 @@ whisper-models/
 # Keep firmware binaries
 !firmware/*.bin
 voice_notes.jsonl
+tts_build/
