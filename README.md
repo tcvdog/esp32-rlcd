@@ -13,7 +13,7 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 - SD browser: TXT paging, WAV playback, MP3 playback, GIF/PNG/JPG/BMP first-frame viewing
 - Voice command C+D: WAV upload to PC, SenseVoice + Whisper dual ASR
 - PC bridge to the current DSH Web session
-- Settings submenu: sound, Wi-Fi, system info, help, voice notes, command feedback
+- Settings submenu: 2-column card grid — game, sound, Wi-Fi, system info, help, voice notes, command feedback
 - PCF85063A RTC + NVS time fallback
 - 3-page system information: software, memory/storage, network/power
 - Settings: speaker volume, ST7305 contrast, Wi-Fi scan and on-screen keyboard

@@ -3404,31 +3404,46 @@ static void wifi_enter();
 static void drawSettingsMenu() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 176, 30, "设置");
+    u8g2_DrawUTF8(g, 176, 32, "设置");
 
-    const ZhGlyph *labels[7] = { &MENU_GAME, &MENU_AV, &MENU_SET, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
+    const ZhGlyph *glyphs[7] = { &MENU_GAME, &MENU_AV, nullptr, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
+    const char *subs[7] = {
+        "动作 / 对战", "音量 / 亮度", "扫描 / 密码", "3 页信息",
+        "摇杆 / 按键", "录音记录", "执行反馈"
+    };
+    const int cw = 186, ch = 50;
     for (int i = 0; i < 7; ++i) {
-        int y = 54 + i * 29;
-        if (i == g_settings_sel) u8g2_DrawFrame(g, 42, y - 17, 316, 27);
-        if (i == 2) {
-            u8g2_SetFont(g, u8g2_font_7x13_tf);
-            u8g2_DrawStr(g, 58, y + 3, "Wi-Fi");
+        int col = i % 2, row = i / 2;
+        int x = 8 + col * 198;
+        int y = 46 + row * 55;
+        if (i == g_settings_sel) {
+            u8g2_DrawFrame(g, x - 2, y - 2, cw + 4, ch + 4);
+            u8g2_DrawFrame(g, x, y, cw, ch);
         } else {
-            drawZh(*labels[i], 58, y - 12);
+            u8g2_DrawFrame(g, x, y, cw, ch);
         }
-        if (i == 1) {
-            u8g2_SetFont(g, u8g2_font_7x13_tf);
-            u8g2_DrawStr(g, 170, y + 3, "volume / contrast");
+        if (i == 2) {
+            u8g2_SetFont(g, u8g2_font_10x20_tf);
+            int w = u8g2_GetStrWidth(g, "Wi-Fi");
+            u8g2_DrawStr(g, x + (cw - w) / 2, y + 28, "Wi-Fi");
+        } else {
+            drawZh(*glyphs[i], x + (cw - 96) / 2, y + 5);
         }
+        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+        int sw = u8g2_GetUTF8Width(g, subs[i]);
+        u8g2_DrawUTF8(g, x + (cw - sw) / 2, y + 46, subs[i]);
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 270, "UP/DOWN SELECT   A ENTER");
-    u8g2_DrawStr(g, 8, 290, "B: BACK   SW: BACK");
+    u8g2_DrawStr(g, 8, 280, "ARROWS SELECT   A ENTER");
+    u8g2_DrawStr(g, 8, 294, "B: BACK   SW: BACK");
 }
 
+
 static void handleSettingsMenu() {
-    if (in.up && !prevIn.up) g_settings_sel = (g_settings_sel + 6) % 7;
-    if (in.down && !prevIn.down) g_settings_sel = (g_settings_sel + 1) % 7;
+    if (in.up && !prevIn.up) { g_settings_sel = (g_settings_sel >= 2) ? g_settings_sel - 2 : g_settings_sel; }
+    if (in.down && !prevIn.down) { if (g_settings_sel + 2 < 7) g_settings_sel += 2; }
+    if (in.x < 0 && prevIn.x >= 0) { if ((g_settings_sel & 1) && g_settings_sel > 0) --g_settings_sel; }
+    if (in.x > 0 && prevIn.x <= 0) { if (!(g_settings_sel & 1) && g_settings_sel + 1 < 7) ++g_settings_sel; }
     if (in.k3 && !prevIn.k3) {
         switch (g_settings_sel) {
             case 0: resetGame(); g_hitStop = 0; g_shake = 0; g_shakeX = g_shakeY = 0; g_mode = MODE_GAME; break;
