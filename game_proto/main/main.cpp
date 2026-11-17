@@ -2021,6 +2021,16 @@ static esp_err_t ota_upload_post(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t ota_info_get(httpd_req_t *req) {
+    char q[64] = {0}, pg[8] = {0};
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+        httpd_query_key_value(q, "page", pg, sizeof(pg)) == ESP_OK)
+        g_info_page = atoi(pg) % 4;
+    g_mode = MODE_INFO;
+    httpd_resp_sendstr(req, "OK");
+    return ESP_OK;
+}
+
 static esp_err_t ota_wordaudio_get(httpd_req_t *req) {
     char q[64] = {0}, lv[8] = {0}, ix[8] = {0};
     int level = 0, idx = 1;
@@ -2449,6 +2459,7 @@ static void ota_start(void) {
     httpd_uri_t wifi = { .uri = "/wifi", .method = HTTP_GET, .handler = ota_wifi_get, .user_ctx = NULL };
     httpd_uri_t files = { .uri = "/files", .method = HTTP_GET, .handler = ota_files_get, .user_ctx = NULL };
     httpd_uri_t wordaudio = { .uri = "/wordaudio", .method = HTTP_GET, .handler = ota_wordaudio_get, .user_ctx = NULL };
+    httpd_uri_t info = { .uri = "/info", .method = HTTP_GET, .handler = ota_info_get, .user_ctx = NULL };
     httpd_uri_t back = { .uri = "/back", .method = HTTP_GET, .handler = ota_back_get, .user_ctx = NULL };
     httpd_uri_t upload = { .uri = "/upload", .method = HTTP_POST, .handler = ota_upload_post, .user_ctx = NULL };
     httpd_uri_t feedback = { .uri = "/feedback", .method = HTTP_POST, .handler = ota_feedback_post, .user_ctx = NULL };
@@ -2466,6 +2477,7 @@ static void ota_start(void) {
     httpd_register_uri_handler(server, &wifi);
     httpd_register_uri_handler(server, &files);
     httpd_register_uri_handler(server, &wordaudio);
+    httpd_register_uri_handler(server, &info);
     httpd_register_uri_handler(server, &back);
     httpd_register_uri_handler(server, &upload);
     httpd_register_uri_handler(server, &feedback);
@@ -2565,7 +2577,7 @@ static void drawInfo() {
         snprintf(b, sizeof(b), "SD free %u MB", (unsigned)(sf / (1024 * 1024))); u8g2_DrawStr(g, 8, 180, b);
         snprintf(b, sizeof(b), "SD total %u MB", (unsigned)(st / (1024 * 1024))); u8g2_DrawStr(g, 8, 202, b);
         snprintf(b, sizeof(b), "SD used %u MB", (unsigned)((st - sf) / (1024 * 1024))); u8g2_DrawStr(g, 8, 224, b);
-    } else {
+    } else if (g_info_page == 2) {
         snprintf(b, sizeof(b), "WiFi    %s  %d dBm", g_wifi_sta ? "connected" : "off", g_rssi); u8g2_DrawStr(g, 8, 70, b);
         snprintf(b, sizeof(b), "SSID    %s", g_ssid[0] ? g_ssid : "-"); u8g2_DrawStr(g, 8, 92, b);
         snprintf(b, sizeof(b), "IP      %s", g_ota_info); u8g2_DrawStr(g, 8, 114, b);
@@ -2573,10 +2585,30 @@ static void drawInfo() {
         snprintf(b, sizeof(b), "Uptime  %lu s", (unsigned long)(esp_timer_get_time() / 1000000)); u8g2_DrawStr(g, 8, 158, b);
         snprintf(b, sizeof(b), "Reset   %s", reset_reason_str(esp_reset_reason())); u8g2_DrawStr(g, 8, 180, b);
         snprintf(b, sizeof(b), "RTC     %s", g_rtc_ok ? "PCF85063A OK" : "not found"); u8g2_DrawStr(g, 8, 202, b);
-        snprintf(b, sizeof(b), "UI      6 items / 2 pages"); u8g2_DrawStr(g, 8, 224, b);
+        snprintf(b, sizeof(b), "UI      5 items / 2 pages"); u8g2_DrawStr(g, 8, 224, b);
+    } else {
+        TaskStatus_t tasks[24];
+        UBaseType_t n = uxTaskGetSystemState(tasks, 24, nullptr);
+        snprintf(b, sizeof(b), "TASKS %u   NAME       ST PRI STACK", (unsigned)n);
+        u8g2_DrawStr(g, 8, 62, b);
+        for (UBaseType_t i = 0; i < n && i < 10; ++i) {
+            char st = '?';
+            switch (tasks[i].eCurrentState) {
+                case eRunning: st = 'R'; break;
+                case eReady: st = 'r'; break;
+                case eBlocked: st = 'B'; break;
+                case eSuspended: st = 'S'; break;
+                case eDeleted: st = 'D'; break;
+                default: st = '?'; break;
+            }
+            snprintf(b, sizeof(b), "%-16.16s %c %2u %5u",
+                     tasks[i].pcTaskName, st, (unsigned)tasks[i].uxCurrentPriority,
+                     (unsigned)tasks[i].usStackHighWaterMark);
+            u8g2_DrawStr(g, 8, 82 + i * 16, b);
+        }
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    snprintf(b, sizeof(b), "PAGE %d/3   UP/DOWN", g_info_page + 1); u8g2_DrawStr(g, 8, 252, b);
+    snprintf(b, sizeof(b), "PAGE %d/4   UP/DOWN", g_info_page + 1); u8g2_DrawStr(g, 8, 252, b);
     u8g2_DrawStr(g, 8, 276, "B: BACK    SW: BACK");
     u8g2_DrawStr(g, 8, 292, "Compact hardware / software info");
 }
@@ -6778,8 +6810,8 @@ static void gameTask(void *arg) {
             drawFiles();
             presentFrame();
         } else if (g_mode == MODE_INFO || g_mode == MODE_HELP) {
-            if (g_mode == MODE_INFO && in.up && !prevIn.up) g_info_page = (g_info_page + 2) % 3;
-            if (g_mode == MODE_INFO && in.down && !prevIn.down) g_info_page = (g_info_page + 1) % 3;
+            if (g_mode == MODE_INFO && in.up && !prevIn.up) g_info_page = (g_info_page + 3) % 4;
+            if (g_mode == MODE_INFO && in.down && !prevIn.down) g_info_page = (g_info_page + 1) % 4;
             if (g_mode == MODE_INFO && in.k4 && !prevIn.k4) { g_mode = MODE_SETTINGS; prevIn = in; }
             if (updateBackChord(realDt)) {
                 g_mode = MODE_MENU;

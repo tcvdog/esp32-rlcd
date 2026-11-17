@@ -15,6 +15,7 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 - PC bridge to the current DSH Web session
 - Settings submenu: 2-column card grid — sound, Wi-Fi, system info, help, voice notes, command feedback
 - PCF85063A RTC + NVS time fallback
+- FreeRTOS task monitor as System Info page 4 (state/priority/stack)
 - 3-page system information: software, memory/storage, network/power
 - Settings: speaker volume, ST7305 contrast, Wi-Fi scan and on-screen keyboard
 
