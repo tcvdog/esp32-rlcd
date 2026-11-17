@@ -1,0 +1,9 @@
+{
+  "id": "projectile",
+  "name": "平抛运动",
+  "gravity": 9.8,
+  "v0": {"min": 5, "max": 30, "default": 15, "unit": "m/s"},
+  "height": {"min": 0, "max": 20, "default": 10, "unit": "m"},
+  "formula": ["x = v0 * t", "y = h - 0.5 * g * t^2"],
+  "readouts": ["t", "x", "y", "vx", "vy"]
+}

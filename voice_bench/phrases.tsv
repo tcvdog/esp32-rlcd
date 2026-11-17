@@ -1,0 +1,11 @@
+id	text
+01_closed_loop	请只回复语音闭环测试成功不要修改任何文件
+02_add_star	把主目录的设置增加一个五角星
+03_page_two	打开主目录第二页
+04_physics	打开物理实验的初中列表
+05_settings	把设置里的音量调大
+06_system_info	显示当前系统信息
+07_ota	构建并上传新固件
+08_back	返回上一级
+09_help	打开使用帮助
+10_record	开始一次新的语音测试

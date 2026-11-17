@@ -1,0 +1,30 @@
+# Build outputs
+**/build/
+**/managed_components/
+**/__pycache__/
+*.pyc
+*.pyo
+*.o
+*.a
+*.elf
+*.map
+
+# Local recordings, generated audio, transcripts and temporary captures
+voice_capture/
+voice_audio/
+voice_commands.jsonl
+voice_bench/wavs/
+*.wav
+*.mp3
+*.mp4
+*.pbm
+*.pgm
+
+# Local models and environments
+whisper-models/
+.vscode/
+.idea/
+
+# Keep firmware binaries
+!firmware/*.bin
+voice_notes.jsonl

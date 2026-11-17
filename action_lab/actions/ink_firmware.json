@@ -1,0 +1,20 @@
+{
+  "name": "ink_cartwheel",
+  "duration": 0.95,
+  "fps": 30,
+  "skeleton": {
+    "headR": 9, "torso": 36, "upperArm": 21, "forearm": 21,
+    "thigh": 32, "shin": 33, "foot": 7, "hipH": 64,
+    "shoulderW": 20, "hipW": 12, "ground": 244
+  },
+  "keyframes": [
+    {"t":0.00,"torso":-82,"head":-90,"uaF":50,"faF":-92,"uaB":118,"faB":-30,"thF":52,"shF":88,"thB":104,"shB":126,"dx":0,"dy":0,"rot":0},
+    {"t":0.10,"torso":-70,"head":-70,"uaF":120,"faF":20,"uaB":150,"faB":-10,"thF":65,"shF":120,"thB":95,"shB":130,"dx":-4,"dy":4,"rot":25},
+    {"t":0.21,"torso":-48,"head":-38,"uaF":150,"faF":70,"uaB":160,"faB":30,"thF":30,"shF":90,"thB":70,"shB":120,"dx":8,"dy":-10,"rot":105},
+    {"t":0.32,"torso":-32,"head":-25,"uaF":100,"faF":130,"uaB":125,"faB":100,"thF":10,"shF":40,"thB":55,"shB":100,"dx":18,"dy":-18,"rot":200},
+    {"t":0.42,"torso":-58,"head":-60,"uaF":55,"faF":100,"uaB":85,"faB":80,"thF":50,"shF":25,"thB":90,"shB":55,"dx":28,"dy":-4,"rot":295},
+    {"t":0.53,"torso":-78,"head":-85,"uaF":45,"faF":-70,"uaB":110,"faB":-20,"thF":58,"shF":105,"thB":100,"shB":128,"dx":32,"dy":5,"rot":350},
+    {"t":0.64,"torso":-82,"head":-90,"uaF":50,"faF":-92,"uaB":118,"faB":-30,"thF":52,"shF":88,"thB":104,"shB":126,"dx":34,"dy":0,"rot":360},
+    {"t":0.95,"torso":-82,"head":-90,"uaF":50,"faF":-92,"uaB":118,"faB":-30,"thF":52,"shF":88,"thB":104,"shB":126,"dx":34,"dy":0,"rot":360}
+  ]
+}

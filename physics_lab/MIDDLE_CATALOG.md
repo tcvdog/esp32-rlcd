@@ -1,0 +1,74 @@
+# 初中实验目录（68）
+
+来源：liziwuli.com 公开目录，2026-11-13 抓取。
+
+| # | 学习模块 | 实验 | slug |
+|---|---|---|---|
+| 1 | junior-mechanical-motion | 长度和时间的测量 | junior-mechanical-motion |
+| 2 | junior-mechanical-motion | 测量平均速度 | junior-mechanical-motion |
+| 3 | junior-mechanical-motion | 运动的快慢 | junior-mechanical-motion |
+| 4 | junior-mechanical-motion | 超声波测速 | junior-mechanical-motion |
+| 5 | junior-sound | 声音的产生与传播 | junior-sound |
+| 6 | junior-sound | 声音的特性 | junior-sound |
+| 7 | junior-states-of-matter | 热胀冷缩 | junior-states-of-matter |
+| 8 | junior-states-of-matter | 熔化与凝固 | junior-states-of-matter |
+| 9 | junior-states-of-matter | 汽化与液化 | junior-states-of-matter |
+| 10 | junior-states-of-matter | 升华和凝华 | junior-states-of-matter |
+| 11 | junior-light | 光的直线传播 | junior-light |
+| 12 | junior-light | 光的反射与平面镜成像 | junior-light |
+| 13 | junior-light | 光的折射与色散 | junior-light |
+| 14 | junior-light | 生活中的折射现象 | junior-light |
+| 15 | junior-lenses | 凸透镜成像规律 | junior-lenses |
+| 16 | junior-lenses | 透镜的三条特殊光线 | junior-lenses |
+| 17 | junior-lenses | 测量凸透镜焦距 | junior-lenses |
+| 18 | junior-lenses | 眼睛和眼镜 | junior-lenses |
+| 19 | junior-lenses | 照相机的原理 | junior-lenses |
+| 20 | junior-lenses | 投影仪的原理 | junior-lenses |
+| 21 | junior-lenses | 制作望远镜 | junior-lenses |
+| 22 | junior-lenses | 显微镜 | junior-lenses |
+| 23 | junior-mass-density | 质量的测量 | junior-mass-density |
+| 24 | junior-mass-density | 密度的测量 | junior-mass-density |
+| 25 | junior-force-motion | 弹力与重力 | junior-force-motion |
+| 26 | junior-force-motion | 阻力对物体运动的影响和惯性 | junior-force-motion |
+| 27 | junior-force-motion | 二力平衡 | junior-force-motion |
+| 28 | junior-force-motion | 探究滑动摩擦力的大小与哪些因素有关 | junior-force-motion |
+| 29 | junior-force-motion | 同一直线上二力的合成 | junior-force-motion |
+| 30 | junior-pressure | 压力的作用效果 | junior-pressure |
+| 31 | junior-pressure | 探究液体压强与哪些因素有关 | junior-pressure |
+| 32 | junior-pressure | 大气压强 | junior-pressure |
+| 33 | junior-pressure | 流体压强与流速 | junior-pressure |
+| 34 | junior-buoyancy | 浮力与阿基米德原理 | junior-buoyancy |
+| 35 | junior-buoyancy | 浮沉条件与浮力综合 | junior-buoyancy |
+| 36 | junior-work-simple-machines | 功和功率 | junior-work-simple-machines |
+| 37 | junior-work-simple-machines | 动能与势能 | junior-work-simple-machines |
+| 38 | junior-work-simple-machines | 探究杠杆的平衡条件 | junior-work-simple-machines |
+| 39 | junior-work-simple-machines | 动滑轮与距离问题 | junior-work-simple-machines |
+| 40 | junior-work-simple-machines | 滑轮组与机械效率 | junior-work-simple-machines |
+| 41 | junior-internal-energy | 分子热运动 | junior-internal-energy |
+| 42 | junior-internal-energy | 比较不同物质吸收热量的情况 | junior-internal-energy |
+| 43 | junior-internal-energy | 四冲程汽油机 | junior-internal-energy |
+| 44 | junior-internal-energy | 热机原理 | junior-internal-energy |
+| 45 | junior-internal-energy | 分子间的作用力 | junior-internal-energy |
+| 46 | junior-internal-energy | 四冲程柴油机 | junior-internal-energy |
+| 47 | junior-internal-energy | 蒸汽机 | junior-internal-energy |
+| 48 | junior-current-circuit | 摩擦起电 | junior-current-circuit |
+| 49 | junior-current-circuit | 电荷间的相互作用 | junior-current-circuit |
+| 50 | junior-current-circuit | 原子及其结构 | junior-current-circuit |
+| 51 | junior-current-circuit | 静电感应 | junior-current-circuit |
+| 52 | junior-current-circuit | 静电喷涂 | junior-current-circuit |
+| 53 | junior-current-circuit | 电荷与电流 | junior-current-circuit |
+| 54 | junior-current-circuit | 串并联电路与电流规律 | junior-current-circuit |
+| 55 | junior-current-circuit | 电流表模型 | junior-current-circuit |
+| 56 | junior-voltage-resistance-ohm | 电压 电阻与变阻器 | junior-voltage-resistance-ohm |
+| 57 | junior-voltage-resistance-ohm | 电阻的水流模型 | junior-voltage-resistance-ohm |
+| 58 | junior-voltage-resistance-ohm | 滑动变阻器模型 | junior-voltage-resistance-ohm |
+| 59 | junior-voltage-resistance-ohm | 探究欧姆定律 | junior-voltage-resistance-ohm |
+| 60 | junior-electric-power | 探究电功大小与哪些因素有关 | junior-electric-power |
+| 61 | junior-electric-power | 电功率 | junior-electric-power |
+| 62 | junior-electric-power | 焦耳定律 | junior-electric-power |
+| 63 | junior-electromagnetism | 磁场与磁感线 | junior-electromagnetism |
+| 64 | junior-electromagnetism | 电生磁与电磁铁 | junior-electromagnetism |
+| 65 | junior-electromagnetism | 探究通电螺线管外部的磁场分布 | junior-electromagnetism |
+| 66 | junior-electromagnetism | 通电导线在磁场中受力运动 | junior-electromagnetism |
+| 67 | junior-electromagnetism | 电动机模型 | junior-electromagnetism |
+| 68 | junior-electromagnetism | 探究感应电流产生的条件 | junior-electromagnetism |

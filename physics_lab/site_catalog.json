@@ -1,0 +1,362 @@
+[
+ {
+  "id": "uniform-linear-motion",
+  "label": "匀速直线运动",
+  "category": "运动学与力学基础",
+  "status": "已实现"
+ },
+ {
+  "id": "free-fall",
+  "label": "自由落体",
+  "category": "运动学与力学基础",
+  "status": "已实现"
+ },
+ {
+  "id": "uniform-accelerated-motion",
+  "label": "匀变速直线运动",
+  "category": "运动学与力学基础",
+  "status": "已实现"
+ },
+ {
+  "id": "projectile-motion",
+  "label": "平抛与抛体运动",
+  "category": "运动学与力学基础",
+  "status": "已实现"
+ },
+ {
+  "id": "motion-composition",
+  "label": "运动的合成与分解",
+  "category": "运动学与力学基础",
+  "status": "A 可做"
+ },
+ {
+  "id": "force-composition",
+  "label": "力的合成",
+  "category": "相互作用与牛顿定律",
+  "status": "已实现"
+ },
+ {
+  "id": "newton-second-law-cart",
+  "label": "牛顿第二定律",
+  "category": "相互作用与牛顿定律",
+  "status": "A 可做"
+ },
+ {
+  "id": "static-kinetic-friction",
+  "label": "静摩擦与滑动摩擦",
+  "category": "相互作用与牛顿定律",
+  "status": "A 可做"
+ },
+ {
+  "id": "hookes-law",
+  "label": "胡克定律",
+  "category": "相互作用与牛顿定律",
+  "status": "A 可做"
+ },
+ {
+  "id": "pulley-tension",
+  "label": "滑轮与张力",
+  "category": "相互作用与牛顿定律",
+  "status": "A 可做"
+ },
+ {
+  "id": "circular-motion",
+  "label": "圆周运动",
+  "category": "曲线运动与万有引力",
+  "status": "A 可做"
+ },
+ {
+  "id": "centripetal-force",
+  "label": "向心力",
+  "category": "曲线运动与万有引力",
+  "status": "A 可做"
+ },
+ {
+  "id": "gravitation-orbit",
+  "label": "万有引力轨道",
+  "category": "曲线运动与万有引力",
+  "status": "B 简化"
+ },
+ {
+  "id": "celestial-motion",
+  "label": "天体运动",
+  "category": "曲线运动与万有引力",
+  "status": "B 简化"
+ },
+ {
+  "id": "escape-velocity",
+  "label": "逃逸速度",
+  "category": "曲线运动与万有引力",
+  "status": "B 简化"
+ },
+ {
+  "id": "mechanical-work",
+  "label": "机械功",
+  "category": "功与机械能",
+  "status": "A 可做"
+ },
+ {
+  "id": "kinetic-energy",
+  "label": "动能",
+  "category": "功与机械能",
+  "status": "A 可做"
+ },
+ {
+  "id": "gravitational-potential-energy",
+  "label": "重力势能",
+  "category": "功与机械能",
+  "status": "A 可做"
+ },
+ {
+  "id": "mechanical-energy-conservation",
+  "label": "机械能守恒",
+  "category": "功与机械能",
+  "status": "A 可做"
+ },
+ {
+  "id": "locomotive-power",
+  "label": "机车功率",
+  "category": "功与机械能",
+  "status": "A 可做"
+ },
+ {
+  "id": "impulse",
+  "label": "冲量",
+  "category": "动量与碰撞",
+  "status": "A 可做"
+ },
+ {
+  "id": "momentum-conservation",
+  "label": "动量守恒",
+  "category": "动量与碰撞",
+  "status": "A 可做"
+ },
+ {
+  "id": "elastic-collision",
+  "label": "弹性碰撞",
+  "category": "动量与碰撞",
+  "status": "A 可做"
+ },
+ {
+  "id": "inelastic-collision",
+  "label": "非弹性碰撞",
+  "category": "动量与碰撞",
+  "status": "A 可做"
+ },
+ {
+  "id": "recoil-rocket",
+  "label": "反冲火箭",
+  "category": "动量与碰撞",
+  "status": "A 可做"
+ },
+ {
+  "id": "coulomb-force",
+  "label": "库仑力",
+  "category": "静电场与电磁学基础",
+  "status": "B 简化"
+ },
+ {
+  "id": "electric-field-lines",
+  "label": "电场线",
+  "category": "静电场与电磁学基础",
+  "status": "B 简化"
+ },
+ {
+  "id": "equipotential-map",
+  "label": "等势面",
+  "category": "静电场与电磁学基础",
+  "status": "B 简化"
+ },
+ {
+  "id": "parallel-plate-capacitor",
+  "label": "平行板电容器",
+  "category": "静电场与电磁学基础",
+  "status": "B 简化"
+ },
+ {
+  "id": "charged-particle-electric-field",
+  "label": "带电粒子在电场中偏转",
+  "category": "静电场与电磁学基础",
+  "status": "B 简化"
+ },
+ {
+  "id": "ohms-law",
+  "label": "欧姆定律",
+  "category": "恒定电流与电路",
+  "status": "A 可做"
+ },
+ {
+  "id": "series-circuit",
+  "label": "串联电路",
+  "category": "恒定电流与电路",
+  "status": "A 可做"
+ },
+ {
+  "id": "parallel-circuit",
+  "label": "并联电路",
+  "category": "恒定电流与电路",
+  "status": "A 可做"
+ },
+ {
+  "id": "closed-circuit-emf",
+  "label": "闭合电路欧姆定律",
+  "category": "恒定电流与电路",
+  "status": "A 可做"
+ },
+ {
+  "id": "sliding-rheostat",
+  "label": "滑动变阻器",
+  "category": "恒定电流与电路",
+  "status": "A 可做"
+ },
+ {
+  "id": "magnetic-field-lines",
+  "label": "磁感线",
+  "category": "磁场与电磁感应",
+  "status": "B 简化"
+ },
+ {
+  "id": "ampere-force",
+  "label": "安培力",
+  "category": "磁场与电磁感应",
+  "status": "A 可做"
+ },
+ {
+  "id": "charged-particle-magnetic-field",
+  "label": "带电粒子在磁场中运动",
+  "category": "磁场与电磁感应",
+  "status": "B 简化"
+ },
+ {
+  "id": "faraday-induction",
+  "label": "法拉第电磁感应",
+  "category": "磁场与电磁感应",
+  "status": "A 可做"
+ },
+ {
+  "id": "lenz-law",
+  "label": "楞次定律",
+  "category": "磁场与电磁感应",
+  "status": "A 可做"
+ },
+ {
+  "id": "spring-oscillator",
+  "label": "弹簧振子",
+  "category": "机械振动与机械波",
+  "status": "已实现"
+ },
+ {
+  "id": "simple-pendulum",
+  "label": "单摆",
+  "category": "机械振动与机械波",
+  "status": "已实现"
+ },
+ {
+  "id": "mechanical-wave",
+  "label": "机械波",
+  "category": "机械振动与机械波",
+  "status": "A 可做"
+ },
+ {
+  "id": "wave-interference",
+  "label": "波的干涉",
+  "category": "机械振动与机械波",
+  "status": "A 可做"
+ },
+ {
+  "id": "forced-vibration-resonance",
+  "label": "受迫振动与共振",
+  "category": "机械振动与机械波",
+  "status": "B 简化"
+ },
+ {
+  "id": "reflection-refraction",
+  "label": "反射与折射",
+  "category": "光学",
+  "status": "A 可做"
+ },
+ {
+  "id": "total-internal-reflection",
+  "label": "全反射",
+  "category": "光学",
+  "status": "A 可做"
+ },
+ {
+  "id": "thin-lens",
+  "label": "薄透镜成像",
+  "category": "光学",
+  "status": "A 可做"
+ },
+ {
+  "id": "double-slit-interference",
+  "label": "双缝干涉",
+  "category": "光学",
+  "status": "A 可做"
+ },
+ {
+  "id": "prism-dispersion",
+  "label": "棱镜色散",
+  "category": "光学",
+  "status": "A 可做"
+ },
+ {
+  "id": "brownian-motion",
+  "label": "布朗运动",
+  "category": "热学与气体",
+  "status": "B 简化"
+ },
+ {
+  "id": "molecular-speed-distribution",
+  "label": "分子速率分布",
+  "category": "热学与气体",
+  "status": "B 简化"
+ },
+ {
+  "id": "ideal-gas-law",
+  "label": "理想气体状态方程",
+  "category": "热学与气体",
+  "status": "A 可做"
+ },
+ {
+  "id": "isothermal-process",
+  "label": "气体等温变化",
+  "category": "热学与气体",
+  "status": "A 可做"
+ },
+ {
+  "id": "thermometer-heat-transfer",
+  "label": "温度计与热传递",
+  "category": "热学与气体",
+  "status": "A 可做"
+ },
+ {
+  "id": "atom-model",
+  "label": "原子模型",
+  "category": "原子与近代物理",
+  "status": "D 不建议"
+ },
+ {
+  "id": "photoelectric-effect",
+  "label": "光电效应",
+  "category": "原子与近代物理",
+  "status": "A 可做"
+ },
+ {
+  "id": "blackbody-spectrum",
+  "label": "黑体辐射",
+  "category": "原子与近代物理",
+  "status": "A 可做"
+ },
+ {
+  "id": "radioactive-decay",
+  "label": "放射性衰变",
+  "category": "原子与近代物理",
+  "status": "A 可做"
+ },
+ {
+  "id": "cloud-chamber",
+  "label": "云室径迹",
+  "category": "原子与近代物理",
+  "status": "D 不建议"
+ }
+]
