@@ -1915,14 +1915,14 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
         httpd_query_key_value(q, "sel", v, sizeof(v)) == ESP_OK) {
         sel = atoi(v);
     }
-    if (sel < 0 || sel > 5) sel = 0;
+    if (sel < 0 || sel > 4) sel = 0;
     g_menu_sel = sel;
     g_mode = MODE_MENU;
     char e[8] = {0};
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
         httpd_query_key_value(q, "enter", e, sizeof(e)) == ESP_OK &&
         strcmp(e, "1") == 0) {
-        if (sel == 1) {
+        if (sel == 0) {
             g_word_cat_sel = 0;
             char lv[8] = {0};
             if (httpd_query_key_value(q, "level", lv, sizeof(lv)) == ESP_OK) {
@@ -1932,10 +1932,10 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
                 g_mode = MODE_WORD;
             } else g_mode = MODE_WORD_MENU;
         }
-        else if (sel == 2) g_mode = MODE_PHYSICS;
-        else if (sel == 3) files_enter();
-        else if (sel == 4) music_enter();
-        else if (sel == 5) g_mode = MODE_SETTINGS;
+        else if (sel == 1) g_mode = MODE_PHYSICS;
+        else if (sel == 2) files_enter();
+        else if (sel == 3) music_enter();
+        else if (sel == 4) g_mode = MODE_SETTINGS;
     }
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
@@ -3098,15 +3098,14 @@ static void drawMenu() {
     drawStatus();
     drawZhCentered(MULU, 28);
 
-    const ZhGlyph *labels[6] = { &MENU_GAME, &MENU_WORD, &MENU_PHYSICS, &MENU_SD, &MENU_MUSIC, &MENU_SET };
-    const char *numbers[6] = { "01", "02", "03", "04", "05", "06" };
-    const char *desc[6] = {
-        "火柴人对战 · 动作与连招",
-        "单词卡 · 记忆与复习",
+    const ZhGlyph *labels[5] = { &MENU_WORD, &MENU_PHYSICS, &MENU_SD, &MENU_MUSIC, &MENU_SET };
+    const char *numbers[5] = { "01", "02", "03", "04", "05" };
+    const char *desc[5] = {
+        "单词卡 · KET / PET 句子记忆",
         "初中 / 高中 物理实验",
         "SD 卡文件 · 音乐 · 图片",
         "MP3 / WAV 歌曲播放器",
-        "系统 · 语音 · Wi-Fi · 帮助"
+        "游戏 · 系统 · 语音 · Wi-Fi"
     };
 
     const int per_page = 4;
@@ -3120,7 +3119,7 @@ static void drawMenu() {
 
     for (int i = 0; i < per_page; ++i) {
         int item = page * per_page + i;
-        if (item >= 6) break;
+        if (item >= 5) break;
         int y = 60 + i * 44;
         u8g2_SetFont(g, u8g2_font_9x15_tf);
         u8g2_DrawStr(g, 36, y + 24, numbers[item]);
@@ -3153,7 +3152,7 @@ static void handleMenuInput() {
     int page = g_menu_sel / per_page;
     int slot = g_menu_sel % per_page;
     int page_start = page * per_page;
-    int page_items = 6 - page_start;
+    int page_items = 5 - page_start;
     if (page_items > 4) page_items = 4;
 
     if (in.x < 0 && prevIn.x >= 0) {
@@ -3177,20 +3176,16 @@ static void handleMenuInput() {
 
     if (in.k3 && !prevIn.k3) {
         if (g_menu_sel == 0) {
-            resetGame();
-            g_hitStop = 0; g_shake = 0; g_shakeX = g_shakeY = 0;
-            g_mode = MODE_GAME;
-        } else if (g_menu_sel == 1) {
             g_word_cat_sel = 0;
             g_mode = MODE_WORD_MENU;
-        } else if (g_menu_sel == 2) {
+        } else if (g_menu_sel == 1) {
             g_phys_view = 0;
             g_phys_cat = 0;
             g_phys_sel = 0;
             g_mode = MODE_PHYSICS;
-        } else if (g_menu_sel == 3) {
+        } else if (g_menu_sel == 2) {
             files_enter();
-        } else if (g_menu_sel == 4) {
+        } else if (g_menu_sel == 3) {
             music_enter();
         } else {
             g_settings_sel = 0;
@@ -3411,17 +3406,17 @@ static void drawSettingsMenu() {
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 176, 30, "设置");
 
-    const ZhGlyph *labels[6] = { &MENU_AV, &MENU_SET, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
-    for (int i = 0; i < 6; ++i) {
-        int y = 58 + i * 32;
+    const ZhGlyph *labels[7] = { &MENU_GAME, &MENU_AV, &MENU_SET, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
+    for (int i = 0; i < 7; ++i) {
+        int y = 54 + i * 29;
         if (i == g_settings_sel) u8g2_DrawFrame(g, 42, y - 17, 316, 27);
-        if (i == 1) {
+        if (i == 2) {
             u8g2_SetFont(g, u8g2_font_7x13_tf);
             u8g2_DrawStr(g, 58, y + 3, "Wi-Fi");
         } else {
             drawZh(*labels[i], 58, y - 12);
         }
-        if (i == 0) {
+        if (i == 1) {
             u8g2_SetFont(g, u8g2_font_7x13_tf);
             u8g2_DrawStr(g, 170, y + 3, "volume / contrast");
         }
@@ -3432,16 +3427,17 @@ static void drawSettingsMenu() {
 }
 
 static void handleSettingsMenu() {
-    if (in.up && !prevIn.up) g_settings_sel = (g_settings_sel + 5) % 6;
-    if (in.down && !prevIn.down) g_settings_sel = (g_settings_sel + 1) % 6;
+    if (in.up && !prevIn.up) g_settings_sel = (g_settings_sel + 6) % 7;
+    if (in.down && !prevIn.down) g_settings_sel = (g_settings_sel + 1) % 7;
     if (in.k3 && !prevIn.k3) {
         switch (g_settings_sel) {
-            case 0: g_set_sel = 0; g_mode = MODE_SETTINGS_CTRL; break;
-            case 1: wifi_enter(); break;
-            case 2: g_mode = MODE_INFO; break;
-            case 3: g_mode = MODE_HELP; break;
-            case 4: notes_enter(); break;
-            case 5: g_mode = MODE_FEEDBACK; break;
+            case 0: resetGame(); g_hitStop = 0; g_shake = 0; g_shakeX = g_shakeY = 0; g_mode = MODE_GAME; break;
+            case 1: g_set_sel = 0; g_mode = MODE_SETTINGS_CTRL; break;
+            case 2: wifi_enter(); break;
+            case 3: g_mode = MODE_INFO; break;
+            case 4: g_mode = MODE_HELP; break;
+            case 5: notes_enter(); break;
+            case 6: g_mode = MODE_FEEDBACK; break;
         }
     }
     if (in.k4 && !prevIn.k4) g_mode = MODE_MENU;
@@ -6396,6 +6392,7 @@ static void goBack() {
         return;
     }
     if (g_mode == MODE_WIFI) { g_mode = MODE_SETTINGS; return; }
+    if (g_mode == MODE_GAME) { g_mode = MODE_SETTINGS; return; }
     if (g_mode == MODE_WORD) { g_mode = MODE_WORD_MENU; return; }
     if (g_mode == MODE_WORD_MENU) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_SETTINGS_CTRL) { g_mode = MODE_SETTINGS; return; }
