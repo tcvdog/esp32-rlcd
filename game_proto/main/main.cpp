@@ -53,6 +53,8 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "stb_image.h"
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3.h"
+#include "dr_flac.h"
+#include "freertos/idf_additions.h"
 #include "user_config.h"
 #include "fw_version.h"
 #include "win_glyphs.h"
@@ -486,9 +488,20 @@ static volatile bool g_mp3_playing = false, g_mp3_stop = false;
 static volatile uint32_t g_mp3_pos = 0, g_mp3_total = 0;
 static char g_audio_path[300] = "";
 static uint8_t *g_img_gray = nullptr;
-static int g_music_count = 0, g_music_sel = 0;
+static int g_music_count = 0, g_music_sel = 0, g_music_off = 0;
 static int g_music_files[24];
-static bool g_music_autoplay = false;
+static bool g_player_running = false;
+static bool g_player_paused = false;
+static volatile bool g_player_stop = false;
+static volatile bool g_player_finished = false;
+static volatile uint32_t g_player_pos_ms = 0;
+static volatile uint32_t g_player_dur_ms = 0;
+static volatile int g_player_level = 0;
+static volatile uint32_t g_player_gen = 0;
+static volatile int g_player_stage = 0;
+static char g_player_err[48] = "";
+static int g_player_track = -1;
+static char g_player_path[300] = "";
 static volatile bool g_track_finished = false;
 static int g_word_idx = 0;
 static int g_word_level = 0; // 0 KET, 1 PET
@@ -1937,6 +1950,7 @@ static void survey_save();
 static void survey_build_report();
 static void music_enter();
 static void music_stop();
+static void player_start_at(uint32_t start_ms);
 static esp_err_t ota_menu_get(httpd_req_t *req) {
     char q[64] = {0};
     char v[16] = {0};
@@ -2072,6 +2086,22 @@ static esp_err_t ota_survey_report_get(httpd_req_t *req) {
     survey_build_report();
     g_mode = MODE_SURVEY_REPORT;
     httpd_resp_sendstr(req, g_survey_report);
+    return ESP_OK;
+}
+
+static esp_err_t ota_music_get(httpd_req_t *req) {
+    char q[64] = {0}, tr[8] = {0}, pl[8] = {0};
+    music_enter();
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        if (httpd_query_key_value(q, "track", tr, sizeof(tr)) == ESP_OK) {
+            int t = atoi(tr);
+            if (t >= 0 && t < g_music_count) g_music_sel = t;
+        }
+        if (httpd_query_key_value(q, "play", pl, sizeof(pl)) == ESP_OK && atoi(pl)) {
+            player_start_at(0);
+        }
+    }
+    httpd_resp_sendstr(req, "OK");
     return ESP_OK;
 }
 
@@ -2232,7 +2262,7 @@ static void pbm_out(const char *s) {
 }
 
 static esp_err_t ota_diag_get(httpd_req_t *req) {
-    char json[1024];
+    char json[1500];
     snprintf(json, sizeof(json),
         "{\"version\":\"%s\",\"mode\":%d,\"menu\":%d,\"view\":%d,\"phys_cat\":%d,\"voice_state\":%d,"
         "\"voice_msg\":\"%s\",\"codec_ret\":%d,\"i2c_ret\":%d,"
@@ -2240,14 +2270,18 @@ static esp_err_t ota_diag_get(httpd_req_t *req) {
         "\"rtc_ok\":%d,\"audio_ready\":%d,\"rec_open\":%d,\"voice_bytes\":%u,\"read_ret\":%d,\"read_calls\":%d,\"cap_conn\":%d,\"cap_kb\":%u,\"cap_drop\":%u,\"vad_active\":%d,\"vad_seg\":%u,\"sd_ok\":%d,\"batt_mv\":%d,\"batt_pct\":%d,\"charging\":%d,"
         "\"wifi\":%d,\"rssi\":%d,\"ssid\":\"%s\",\"ip\":\"%s\",\"time\":\"%s\","
         "\"buttons\":{\"k1\":%d,\"k2\":%d,\"k3\":%d,\"k4\":%d,\"sw\":%d},"
-        "\"joy\":{\"x\":%d,\"y\":%d}}",
+        "\"joy\":{\"x\":%d,\"y\":%d},"
+        "\"player\":{\"run\":%d,\"pause\":%d,\"fin\":%d,\"track\":%d,\"pos\":%u,\"dur\":%u,\"gen\":%u,\"level\":%d,\"stage\":%d,\"err\":\"%s\"}}",
         FW_VERSION, g_mode, g_menu_sel, g_phys_view, g_phys_cat, g_voice_state,
         g_voice_msg, g_codec_ret, g_i2c_ret,
         g_es8311 ? 1 : 0, g_es7210 ? 1 : 0, codec_debug_stage, codec_debug_err,
         g_spk_ok ? 1 : 0, g_rec_ok ? 1 : 0,
         g_rtc_ok ? 1 : 0, g_audio_ready ? 1 : 0, g_rec_open_ret, (unsigned)g_voice_bytes, g_read_ret, g_read_calls, g_cap_connected ? 1 : 0, (unsigned)(g_cap_sent / 1024), (unsigned)g_cap_drop, g_vad_active ? 1 : 0, (unsigned)g_vad_segments, g_sd_ok ? 1 : 0, g_batt_mv, g_batt_pct, g_charging ? 1 : 0,
         g_wifi_sta ? 1 : 0, g_rssi, g_ssid, g_ota_info, g_clock,
-        in.k1, in.k2, in.k3, in.k4, in.sw, in.rawVrx, in.rawVry);
+        in.k1, in.k2, in.k3, in.k4, in.sw, in.rawVrx, in.rawVry,
+        g_player_running ? 1 : 0, g_player_paused ? 1 : 0, g_player_finished ? 1 : 0,
+        g_player_track, (unsigned)g_player_pos_ms, (unsigned)g_player_dur_ms,
+        (unsigned)g_player_gen, g_player_level, g_player_stage, g_player_err);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, json);
 }
@@ -2523,6 +2557,7 @@ static void ota_start(void) {
     httpd_uri_t files = { .uri = "/files", .method = HTTP_GET, .handler = ota_files_get, .user_ctx = NULL };
     httpd_uri_t wordaudio = { .uri = "/wordaudio", .method = HTTP_GET, .handler = ota_wordaudio_get, .user_ctx = NULL };
     httpd_uri_t info = { .uri = "/info", .method = HTTP_GET, .handler = ota_info_get, .user_ctx = NULL };
+    httpd_uri_t music = { .uri = "/music", .method = HTTP_GET, .handler = ota_music_get, .user_ctx = NULL };
     httpd_uri_t survey_report = { .uri = "/survey_report", .method = HTTP_GET, .handler = ota_survey_report_get, .user_ctx = NULL };
     httpd_uri_t back = { .uri = "/back", .method = HTTP_GET, .handler = ota_back_get, .user_ctx = NULL };
     httpd_uri_t upload = { .uri = "/upload", .method = HTTP_POST, .handler = ota_upload_post, .user_ctx = NULL };
@@ -2542,6 +2577,7 @@ static void ota_start(void) {
     httpd_register_uri_handler(server, &files);
     httpd_register_uri_handler(server, &wordaudio);
     httpd_register_uri_handler(server, &info);
+    httpd_register_uri_handler(server, &music);
     httpd_register_uri_handler(server, &survey_report);
     httpd_register_uri_handler(server, &back);
     httpd_register_uri_handler(server, &upload);
@@ -3042,7 +3078,16 @@ static void handleFilesInput() {
 static bool music_is_audio(const char *name) {
     int n = strlen(name);
     return (n > 4 && strcasecmp(name + n - 4, ".mp3") == 0) ||
-           (n > 4 && strcasecmp(name + n - 4, ".wav") == 0);
+           (n > 4 && strcasecmp(name + n - 4, ".wav") == 0) ||
+           (n > 5 && strcasecmp(name + n - 5, ".flac") == 0);
+}
+
+static const char *music_format(const char *name) {
+    int n = strlen(name);
+    if (n > 4 && strcasecmp(name + n - 4, ".mp3") == 0) return "MP3";
+    if (n > 4 && strcasecmp(name + n - 4, ".wav") == 0) return "WAV";
+    if (n > 5 && strcasecmp(name + n - 5, ".flac") == 0) return "FLAC";
+    return "AUDIO";
 }
 
 static void music_scan() {
@@ -3051,88 +3096,438 @@ static void music_scan() {
     for (int i = 0; i < g_file_count && g_music_count < 24; ++i)
         if (music_is_audio(g_file_names[i])) g_music_files[g_music_count++] = i;
     if (g_music_sel >= g_music_count) g_music_sel = 0;
+    if (g_music_off > g_music_sel) g_music_off = g_music_sel;
+}
+
+static uint32_t music_duration_ms(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    uint8_t h[16] = {0};
+    uint32_t dur = 0;
+    if (fread(h, 1, sizeof(h), f) == sizeof(h)) {
+        int n = strlen(path);
+        if (n > 5 && strcasecmp(path + n - 5, ".flac") == 0) {
+            // FLAC STREAMINFO is at byte 8; sample rate is bits 80..99, total samples bits 108..143.
+            fseek(f, 8, SEEK_SET);
+            uint8_t si[34];
+            if (fread(si, 1, sizeof(si), f) == sizeof(si)) {
+                uint32_t rate = ((uint32_t)si[10] << 12) | ((uint32_t)si[11] << 4) | (si[12] >> 4);
+                uint64_t total = ((uint64_t)(si[13] & 0x0F) << 32) | ((uint64_t)si[14] << 24) |
+                                 ((uint64_t)si[15] << 16) | ((uint64_t)si[16] << 8) | si[17];
+                if (rate > 0) dur = (uint32_t)(total * 1000 / rate);
+            }
+        } else if (n > 4 && strcasecmp(path + n - 4, ".mp3") == 0) {
+            fseek(f, 0, SEEK_END);
+            long sz = ftell(f);
+            uint32_t off = 0;
+            fseek(f, 0, SEEK_SET);
+            uint8_t id3[10];
+            if (fread(id3, 1, 10, f) == 10 && memcmp(id3, "ID3", 3) == 0) {
+                off = 10 + (((uint32_t)(id3[6] & 0x7f) << 21) | ((uint32_t)(id3[7] & 0x7f) << 14) |
+                            ((uint32_t)(id3[8] & 0x7f) << 7) | (id3[9] & 0x7f));
+            }
+            fseek(f, off, SEEK_SET);
+            uint8_t hdr[4];
+            if (fread(hdr, 1, 4, f) == 4 && hdr[0] == 0xFF && (hdr[1] & 0xE0) == 0xE0) {
+                static const int br[16] = {0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0};
+                int bi = (hdr[2] >> 4) & 0x0F;
+                int sr_i = (hdr[2] >> 2) & 0x03;
+                static const int sr[4] = {44100,48000,32000,0};
+                int bitrate = br[bi];
+                int rate = sr[sr_i];
+                if (bitrate && rate && sz > (long)off) dur = (uint32_t)((sz - off) * 8ULL * 1000 / (bitrate * 1000));
+            }
+        } else if (n > 4 && strcasecmp(path + n - 4, ".wav") == 0) {
+            uint8_t hdr[12];
+            fseek(f, 0, SEEK_SET);
+            if (fread(hdr, 1, 12, f) == 12 && memcmp(hdr, "RIFF", 4) == 0) {
+                uint32_t rate = 0; uint16_t ch = 0, bits = 0; uint32_t data_len = 0;
+                while (true) {
+                    uint8_t chk[8];
+                    if (fread(chk, 1, 8, f) != 8) break;
+                    uint32_t csz = chk[4] | (chk[5] << 8) | (chk[6] << 16) | ((uint32_t)chk[7] << 24);
+                    if (memcmp(chk, "fmt ", 4) == 0) {
+                        uint8_t fm[16];
+                        if (fread(fm, 1, 16, f) != 16) break;
+                        ch = fm[2] | (fm[3] << 8);
+                        rate = fm[4] | (fm[5] << 8) | (fm[6] << 16) | ((uint32_t)fm[7] << 24);
+                        bits = fm[14] | (fm[15] << 8);
+                        if (csz > 16) fseek(f, csz - 16, SEEK_CUR);
+                    } else if (memcmp(chk, "data", 4) == 0) {
+                        data_len = csz;
+                        break;
+                    } else {
+                        fseek(f, csz, SEEK_CUR);
+                    }
+                    if (csz & 1) fseek(f, 1, SEEK_CUR);
+                }
+                if (rate && ch && bits == 16) dur = (uint32_t)((uint64_t)data_len * 1000 / (rate * ch * 2));
+            }
+        }
+    }
+    fclose(f);
+    return dur;
+}
+
+static void player_apply_volume() {
+    if (g_codec) g_codec->CodecPort_SetSpeakerVol(g_volume);
+}
+
+static void *flac_malloc(size_t sz, void *) {
+    return heap_caps_malloc(sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+static void *flac_realloc(void *p, size_t sz, void *) {
+    return heap_caps_realloc(p, sz, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+}
+static void flac_free(void *p, void *) {
+    heap_caps_free(p);
+}
+static drflac_allocation_callbacks g_flac_cb = { nullptr, flac_malloc, flac_realloc, flac_free };
+
+static bool load_file_mem(const char *path, uint8_t **out_data, size_t *out_size) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 20 * 1024 * 1024) { fclose(f); return false; }
+    uint8_t *data = (uint8_t *)heap_caps_malloc(sz, MALLOC_CAP_SPIRAM);
+    if (!data) data = (uint8_t *)malloc(sz);
+    if (!data || fread(data, 1, sz, f) != (size_t)sz) {
+        if (data) free(data);
+        fclose(f); return false;
+    }
+    fclose(f);
+    *out_data = data; *out_size = sz;
+    return true;
+}
+
+static int16_t player_out[2048];
+static int player_outn = 0;
+
+static void player_emit(const int16_t *src, int frames, int ch, int rate, double *phase) {
+    if (frames <= 0 || ch <= 0 || rate <= 0) return;
+    double step = (double)rate / 16000.0;
+    while (*phase < frames - 1) {
+        int i = (int)(*phase);
+        float frac = (float)(*phase - i);
+        int16_t l0 = src[i * ch];
+        int16_t l1 = src[(i + 1) * ch];
+        int16_t l = (int16_t)(l0 + (l1 - l0) * frac);
+        int16_t r = l;
+        if (ch > 1) {
+            int16_t r0 = src[i * ch + 1];
+            int16_t r1 = src[(i + 1) * ch + 1];
+            r = (int16_t)(r0 + (r1 - r0) * frac);
+        }
+        player_out[player_outn * 2] = l;
+        player_out[player_outn * 2 + 1] = r;
+        int a = l < 0 ? -l : l;
+        if (a > g_player_level) g_player_level = a;
+        if (++player_outn >= 1024) {
+            g_codec->CodecPort_PlayWrite(player_out, player_outn * 4);
+            player_outn = 0;
+        }
+        *phase += step;
+    }
+    *phase -= frames;
+}
+
+static bool wav_parse(const uint8_t *d, size_t sz, uint32_t *rate, uint16_t *ch, uint32_t *off, uint32_t *len) {
+    if (sz < 44 || memcmp(d, "RIFF", 4) != 0 || memcmp(d + 8, "WAVE", 4) != 0) return false;
+    size_t p = 12;
+    uint16_t bits = 0;
+    bool got_fmt = false;
+    while (p + 8 <= sz) {
+        uint32_t csz = d[p+4] | (d[p+5] << 8) | (d[p+6] << 16) | ((uint32_t)d[p+7] << 24);
+        if (memcmp(d + p, "fmt ", 4) == 0 && p + 24 <= sz) {
+            *ch = d[p+10] | (d[p+11] << 8);
+            *rate = d[p+12] | (d[p+13] << 8) | (d[p+14] << 16) | ((uint32_t)d[p+15] << 24);
+            bits = d[p+22] | (d[p+23] << 8);
+            got_fmt = true;
+        } else if (memcmp(d + p, "data", 4) == 0 && got_fmt) {
+            *off = p + 8;
+            *len = csz;
+            if (*off + *len > sz) *len = sz - *off;
+            return bits == 16 && (*ch == 1 || *ch == 2) && *rate > 0;
+        }
+        p += 8 + csz + (csz & 1);
+    }
+    return false;
+}
+
+static bool player_cancelled(uint32_t gen) {
+    return g_player_stop || gen != g_player_gen;
+}
+
+static void player_task(void *arg) {
+    uint32_t gen = (uint32_t)(uintptr_t)arg;
+    uint8_t *data = nullptr;
+    size_t sz = 0;
+    g_player_stage = 1;
+    snprintf(g_player_err, sizeof(g_player_err), "read");
+    if (!load_file_mem(g_player_path, &data, &sz)) {
+        snprintf(g_player_err, sizeof(g_player_err), "read failed");
+        g_player_running = false; g_player_finished = true; vTaskDeleteWithCaps(NULL); return;
+    }
+    g_player_stage = 2;
+    snprintf(g_player_err, sizeof(g_player_err), "parse");
+    player_outn = 0;
+    g_player_level = 0;
+    uint32_t start_ms = g_player_pos_ms;
+    const char *ext = strrchr(g_player_path, '.');
+    if (!ext) ext = "";
+    double phase = 0.0;
+
+    if (strcasecmp(ext, ".wav") == 0) {
+        uint32_t rate = 0, off = 0, len = 0;
+        uint16_t ch = 0;
+        if (wav_parse(data, sz, &rate, &ch, &off, &len)) {
+            g_player_stage = 3;
+            snprintf(g_player_err, sizeof(g_player_err), "wav decode");
+            g_player_dur_ms = (uint32_t)((uint64_t)len * 1000 / (rate * ch * 2));
+            uint64_t skip_frames = (uint64_t)start_ms * rate / 1000;
+            uint64_t skip_bytes = skip_frames * ch * 2;
+            if (skip_bytes >= len) skip_bytes = 0;
+            off += (uint32_t)skip_bytes;
+            uint32_t frames_left = (len - (uint32_t)skip_bytes) / (ch * 2);
+            g_player_pos_ms = start_ms;
+            uint64_t emitted = 0;
+            while (!player_cancelled(gen) && frames_left > 0) {
+                uint32_t nf = frames_left > 1024 ? 1024 : frames_left;
+                player_emit((const int16_t *)(data + off), nf, ch, rate, &phase);
+                off += nf * ch * 2;
+                frames_left -= nf;
+                emitted += nf;
+                g_player_pos_ms = start_ms + (uint32_t)(emitted * 1000 / rate);
+                g_player_level = g_player_level * 7 / 8;
+                vTaskDelay(1);
+            }
+        }
+    } else if (strcasecmp(ext, ".flac") == 0) {
+        drflac *fl = drflac_open_memory(data, sz, &g_flac_cb);
+        if (fl) {
+            g_player_stage = 3;
+            snprintf(g_player_err, sizeof(g_player_err), "flac decode");
+            uint32_t rate = fl->sampleRate;
+            uint32_t ch = fl->channels;
+            uint64_t total = fl->totalPCMFrameCount;
+            if (rate > 0) g_player_dur_ms = (uint32_t)(total * 1000 / rate);
+            uint64_t start_frame = (uint64_t)start_ms * rate / 1000;
+            if (start_frame > 0) drflac_seek_to_pcm_frame(fl, start_frame);
+            static int16_t pcm[4096 * 2];
+            uint64_t done = start_frame;
+            while (!player_cancelled(gen)) {
+                drflac_uint64 got = drflac_read_pcm_frames_s16(fl, 4096, pcm);
+                if (got == 0) { snprintf(g_player_err, sizeof(g_player_err), "flac read 0"); break; }
+                player_emit(pcm, (int)got, (int)ch, (int)rate, &phase);
+                done += got;
+                g_player_pos_ms = (uint32_t)(done * 1000 / rate);
+                g_player_level = g_player_level * 7 / 8;
+                vTaskDelay(1);
+            }
+            drflac_close(fl);
+        } else {
+            snprintf(g_player_err, sizeof(g_player_err), "flac open failed");
+        }
+    } else {
+        size_t pos = 0;
+        if (sz > 10 && memcmp(data, "ID3", 3) == 0) {
+            pos = 10 + (((size_t)(data[6] & 0x7f) << 21) | ((size_t)(data[7] & 0x7f) << 14) |
+                        ((size_t)(data[8] & 0x7f) << 7) | (size_t)(data[9] & 0x7f));
+        }
+        mp3dec_t dec;
+        mp3dec_init(&dec);
+        static mp3d_sample_t pcm[MINIMP3_MAX_SAMPLES_PER_FRAME * 2];
+        uint64_t decoded_ms = 0;
+        bool started = false;
+        while (pos + 4 < sz && !player_cancelled(gen)) {
+            mp3dec_frame_info_t info = {};
+            int samples = mp3dec_decode_frame(&dec, data + pos, sz - pos, pcm, &info);
+            if (info.frame_bytes <= 0) break;
+            pos += info.frame_bytes;
+            if (samples <= 0 || info.hz <= 0) continue;
+            uint32_t frame_ms = (uint32_t)((uint64_t)samples * 1000 / info.hz);
+            if (!g_player_dur_ms && info.bitrate_kbps > 0)
+                g_player_dur_ms = (uint32_t)((uint64_t)(sz - pos) * 8 * 1000 / (info.bitrate_kbps * 1000)) + (uint32_t)decoded_ms;
+            if (!started) {
+                if (decoded_ms + frame_ms <= start_ms) { decoded_ms += frame_ms; continue; }
+                started = true;
+                g_player_pos_ms = decoded_ms;
+            }
+            player_emit(pcm, samples, info.channels, info.hz, &phase);
+            decoded_ms += frame_ms;
+            g_player_pos_ms = decoded_ms;
+            g_player_level = g_player_level * 7 / 8;
+            if (start_ms == 0 && g_player_dur_ms == 0 && decoded_ms > 1000) { /* unknown */ }
+            vTaskDelay(1);
+        }
+    }
+    if (player_outn > 0) g_codec->CodecPort_PlayWrite(player_out, player_outn * 4);
+    free(data);
+    g_player_level = 0;
+    if (gen == g_player_gen) {
+        g_player_running = false;
+        if (!g_player_stop) g_player_finished = true;
+        g_player_stage = 99;
+        if (strcmp(g_player_err, "flac read 0") != 0 && strcmp(g_player_err, "flac open failed") != 0)
+            snprintf(g_player_err, sizeof(g_player_err), "done");
+    }
+    vTaskDeleteWithCaps(NULL);
+}
+
+static void player_stop(bool keep_position) {
+    if (!g_player_running && !g_player_paused) return;
+    ++g_player_gen;
+    g_player_stop = true;
+    g_player_running = false;
+    g_player_paused = keep_position;
+    g_player_finished = false;
+}
+
+static void player_start_at(uint32_t start_ms) {
+    if (g_music_sel < 0 || g_music_sel >= g_music_count) return;
+    player_stop(false);
+    vTaskDelay(pdMS_TO_TICKS(60));
+    uint32_t gen = ++g_player_gen;
+    g_file_sel = g_music_files[g_music_sel];
+    snprintf(g_player_path, sizeof(g_player_path), "/sdcard/%s", g_file_names[g_file_sel]);
+    g_player_track = g_music_sel;
+    g_player_pos_ms = start_ms;
+    g_player_dur_ms = music_duration_ms(g_player_path);
+    g_player_finished = false;
+    g_player_paused = false;
+    g_player_stop = false;
+    g_player_running = true;
+    player_apply_volume();
+    BaseType_t ok = xTaskCreateWithCaps(player_task, "player", 32768, (void *)(uintptr_t)gen, 3, NULL,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (ok != pdPASS) { g_player_running = false; g_player_paused = true; }
 }
 
 static void music_stop() {
-    g_music_autoplay = false;
-    g_wav_stop = true;
-    g_mp3_stop = true;
+    ++g_player_gen;
+    g_player_stop = true;
+    g_player_running = false;
+    g_player_paused = false;
+    g_player_finished = false;
+    g_player_track = -1;
     g_track_finished = false;
 }
 
 static void music_enter() {
-    wav_stop_playback();
+    ++g_player_gen;
+    g_player_stop = true;
+    g_player_running = false;
+    if (g_wav_playing) g_wav_stop = true;
     if (g_mp3_playing) g_mp3_stop = true;
     music_scan();
-    g_music_autoplay = false;
-    g_track_finished = false;
+    g_music_off = 0;
+    g_player_track = -1;
+    g_player_paused = false;
+    g_player_finished = false;
+    g_player_pos_ms = 0;
+    g_player_dur_ms = 0;
+    player_apply_volume();
     g_mode = MODE_MUSIC;
 }
 
-static void music_play_selected() {
+static void music_format_time(uint32_t ms, char *b, size_t n) {
+    snprintf(b, n, "%u:%02u", (unsigned)(ms / 60000), (unsigned)((ms / 1000) % 60));
+}
+
+static void music_next() {
     if (g_music_count <= 0) return;
-    wav_stop_playback();
-    if (g_mp3_playing) g_mp3_stop = true;
-    g_file_sel = g_music_files[g_music_sel];
-    g_music_autoplay = true;
-    g_track_finished = false;
-    if (strcasecmp(g_file_names[g_file_sel] + strlen(g_file_names[g_file_sel]) - 4, ".wav") == 0)
-        wav_start_playback();
-    else
-        mp3_start_playback();
+    g_music_sel = (g_player_track >= 0 ? g_player_track + 1 : g_music_sel) % g_music_count;
+    player_start_at(0);
 }
 
 static void drawMusic() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 150, 34, "音乐播放器");
+    u8g2_DrawUTF8(g, 142, 32, "音乐播放器");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char b[64];
+    char b[96], t1[16], t2[16];
     if (g_music_count == 0) {
-        u8g2_DrawStr(g, 16, 76, "No MP3/WAV on SD card");
-        u8g2_DrawStr(g, 8, 292, "SW: BACK");
+        u8g2_DrawStr(g, 16, 80, "No MP3/WAV/FLAC on SD card");
+        u8g2_DrawStr(g, 8, 288, "SW: BACK");
         return;
     }
-    bool playing = g_wav_playing || g_mp3_playing;
-    snprintf(b, sizeof(b), "TRACK %d/%d", g_music_sel + 1, g_music_count);
-    u8g2_DrawStr(g, 16, 58, b);
+    int idx = g_music_sel;
+    u8g2_DrawStr(g, 12, 54, "TRACK");
+    snprintf(b, sizeof(b), "%d/%d  %s", idx + 1, g_music_count, music_format(g_file_names[g_music_files[idx]]));
+    u8g2_DrawStr(g, 64, 54, b);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    draw_wrapped_utf8(g_file_names[g_music_files[g_music_sel]], 16, 82, 360, 16, 1);
+    draw_wrapped_utf8(g_file_names[g_music_files[idx]], 12, 76, 376, 16, 1);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 16, 110, playing ? "PLAYING" : "STOP");
-    int pos = g_mp3_playing ? g_mp3_pos : g_wav_pos;
-    int total = g_mp3_playing ? g_mp3_total : g_wav_total;
-    int pct = total ? (int)((uint64_t)pos * 100 / total) : 0;
-    u8g2_DrawFrame(g, 16, 126, 360, 16);
-    u8g2_DrawBox(g, 18, 128, 356 * pct / 100, 12);
-    snprintf(b, sizeof(b), "%d%%", pct);
-    u8g2_DrawStr(g, 16, 158, b);
-    for (int i = 0; i < g_music_count && i < 5; ++i) {
-        int y = 186 + i * 20;
-        snprintf(b, sizeof(b), "%d  %.28s", i + 1, g_file_names[g_music_files[i]]);
-        if (i == g_music_sel) u8g2_DrawFrame(g, 10, y - 13, 380, 18);
-        u8g2_DrawStr(g, 16, y, b);
+    const char *state = g_player_running
+        ? (g_player_stage < 3 ? "LOADING" : "PLAYING")
+        : (g_player_paused ? "PAUSED" : (g_player_finished ? "FINISHED" : "STOP"));
+    u8g2_DrawStr(g, 12, 98, state);
+    snprintf(b, sizeof(b), "VOL %d", g_volume);
+    u8g2_DrawStr(g, 300, 98, b);
+    music_format_time(g_player_pos_ms, t1, sizeof(t1));
+    music_format_time(g_player_dur_ms, t2, sizeof(t2));
+    snprintf(b, sizeof(b), "%s / %s", t1, t2);
+    u8g2_DrawStr(g, 12, 116, b);
+    uint32_t pct = g_player_dur_ms ? (uint32_t)((uint64_t)g_player_pos_ms * 100 / g_player_dur_ms) : 0;
+    if (pct > 100) pct = 100;
+    u8g2_DrawFrame(g, 12, 126, 376, 12);
+    if (pct) u8g2_DrawBox(g, 14, 128, 372 * pct / 100, 8);
+    // Level meter.
+    int lv = g_player_level * 10 / 32768;
+    for (int i = 0; i < 10; ++i) {
+        int h = 4 + i * 2;
+        int x = 300 + i * 8;
+        if (i < lv) u8g2_DrawBox(g, x, 116 - h, 5, h);
+        else u8g2_DrawFrame(g, x, 116 - h, 5, h);
     }
-    u8g2_DrawStr(g, 8, 288, "A PLAY/STOP  L/R PREV/NEXT  SW BACK");
+    // Playlist.
+    if (g_music_sel < g_music_off) g_music_off = g_music_sel;
+    if (g_music_sel >= g_music_off + 4) g_music_off = g_music_sel - 3;
+    for (int i = 0; i < 4 && g_music_off + i < g_music_count; ++i) {
+        int k = g_music_off + i;
+        int y = 166 + i * 24;
+        if (k == g_music_sel) u8g2_DrawFrame(g, 8, y - 13, 384, 20);
+        snprintf(b, sizeof(b), "%s%2d  %.30s", k == g_player_track ? ">" : " ", k + 1, g_file_names[g_music_files[k]]);
+        u8g2_DrawStr(g, 14, y, b);
+    }
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 8, 282, "A PLAY/PAUSE   B NEXT   C/D VOL   L/R SEEK");
+    u8g2_DrawStr(g, 8, 296, "UP/DOWN SELECT   SW BACK");
 }
 
 static void handleMusicInput() {
-    if (g_track_finished && g_music_autoplay) {
-        g_track_finished = false;
-        g_music_sel = (g_music_sel + 1) % (g_music_count > 0 ? g_music_count : 1);
-        music_play_selected();
-    }
+    // Do not auto-advance here: selection is explicit (A/B), avoids racing
+    // with a just-started track from the HTTP test hook.
+    if (g_player_finished && !g_player_running) g_player_finished = false;
     if (g_music_count == 0) { prevIn = in; return; }
     if (in.up && !prevIn.up) g_music_sel = (g_music_sel + g_music_count - 1) % g_music_count;
     if (in.down && !prevIn.down) g_music_sel = (g_music_sel + 1) % g_music_count;
-    if (in.x < 0 && prevIn.x >= 0) g_music_sel = (g_music_sel + g_music_count - 1) % g_music_count;
-    if (in.x > 0 && prevIn.x <= 0) g_music_sel = (g_music_sel + 1) % g_music_count;
-    bool changed = (in.up && !prevIn.up) || (in.down && !prevIn.down) ||
-                   (in.x < 0 && prevIn.x >= 0) || (in.x > 0 && prevIn.x <= 0);
-    if (changed && (g_wav_playing || g_mp3_playing)) { music_stop(); music_play_selected(); }
+    if (in.k1 && !prevIn.k1) { g_volume = g_volume >= 5 ? g_volume - 5 : 0; player_apply_volume(); }
+    if (in.k2 && !prevIn.k2) { g_volume = g_volume <= 95 ? g_volume + 5 : 100; player_apply_volume(); }
     if (in.k3 && !prevIn.k3) {
-        if (g_wav_playing || g_mp3_playing) music_stop();
-        else music_play_selected();
+        if (g_player_running) {
+            uint32_t p = g_player_pos_ms;
+            player_stop(true);
+            g_player_pos_ms = p;
+        } else if (g_player_paused) {
+            g_player_paused = false;
+            player_start_at(g_player_pos_ms);
+        } else {
+            player_start_at(0);
+        }
+    }
+    if (in.k4 && !prevIn.k4) music_next();
+    if (in.x != 0 && !prevIn.x) {
+        int32_t target = (int32_t)g_player_pos_ms + (in.x > 0 ? 5000 : -5000);
+        if (target < 0) target = 0;
+        if (g_player_dur_ms && target > (int32_t)g_player_dur_ms) target = g_player_dur_ms;
+        bool was_running = g_player_running;
+        if (was_running) player_stop(true);
+        g_player_pos_ms = (uint32_t)target;
+        g_player_paused = true;
+        if (was_running) player_start_at(g_player_pos_ms);
     }
     prevIn = in;
 }

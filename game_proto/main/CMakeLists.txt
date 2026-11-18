@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "i2c_bsp.cpp" "codec_port.cpp"
+    SRCS "main.cpp" "i2c_bsp.cpp" "codec_port.cpp" "dr_flac_impl.c"
     REQUIRES
         esp_timer
         driver
