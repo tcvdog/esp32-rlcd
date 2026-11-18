@@ -4641,8 +4641,8 @@ static void projectileParamText(int i, char *b, size_t n) {
 }
 
 static void projectileInput(float dt) {
-    if (in.k1 && !prevIn.k1) g_wuli_page = (g_wuli_page + 2) % 3;
-    if (in.k2 && !prevIn.k2) g_wuli_page = (g_wuli_page + 1) % 3;
+    if (in.up && !prevIn.up) g_wuli_page = (g_wuli_page + 2) % 3;
+    if (in.down && !prevIn.down) g_wuli_page = (g_wuli_page + 1) % 3;
     if (in.k3 && !prevIn.k3) {
         if (ph_flying) ph_paused = !ph_paused;
         else {
@@ -4654,8 +4654,8 @@ static void projectileInput(float dt) {
     if (in.k4 && !prevIn.k4) physicsReset();
 
     if (g_wuli_page == 0) {
-        if (in.up && !prevIn.up) g_wuli_sel = (g_wuli_sel + 7) % 8;
-        if (in.down && !prevIn.down) g_wuli_sel = (g_wuli_sel + 1) % 8;
+        if (in.k1 && !prevIn.k1) g_wuli_sel = (g_wuli_sel + 7) % 8;
+        if (in.k2 && !prevIn.k2) g_wuli_sel = (g_wuli_sel + 1) % 8;
         if (g_wuli_sel <= 2 && in.x != 0) {
             if (g_wuli_sel == 0) ph_v0 = fmaxf(1.0f, fminf(6.0f, ph_v0 + (in.x > 0 ? 1 : -1) * dt * 1.2f));
             else if (g_wuli_sel == 1) ph_h = fmaxf(0.5f, fminf(5.0f, ph_h + (in.x > 0 ? 1 : -1) * dt * 0.8f));
@@ -4667,8 +4667,8 @@ static void projectileInput(float dt) {
             ph_overlay ^= (uint8_t)(1u << (g_wuli_sel - 4));
         }
     } else {
-        // Page 2 graph: up/down toggles y-t/x-t; left/right scrubs time.
-        if ((in.up && !prevIn.up) || (in.down && !prevIn.down)) {
+        // Page 2 graph: C/D toggles y-t/x-t; left/right scrubs time.
+        if ((in.k1 && !prevIn.k1) || (in.k2 && !prevIn.k2)) {
             ph_overlay ^= 0x10;
             ph_paused = true;
         }
@@ -4865,7 +4865,10 @@ static void drawProjectile() {
     projectileReadouts();
     projectileParamStrip();
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "C/D PAGE   L/R ADJUST   A PLAY/PAUSE   B RESET");
+    const char *foot = g_wuli_page == 1
+        ? "UP/DN PAGE  C/D TAB  L/R SCRUB  A PLAY  B RESET"
+        : "UP/DN PAGE  C/D PARAM  L/R ADJ  A PLAY  B RESET";
+    u8g2_DrawStr(g, 8, 288, foot);
 }
 
 static void springResetMotion() {
@@ -4905,14 +4908,14 @@ static void springParamText(int i, char *b, size_t n) {
 }
 
 static void springInput(float dt) {
-    if (in.k1 && !prevIn.k1) g_wuli_page = (g_wuli_page + 2) % 3;
-    if (in.k2 && !prevIn.k2) g_wuli_page = (g_wuli_page + 1) % 3;
+    if (in.up && !prevIn.up) g_wuli_page = (g_wuli_page + 2) % 3;
+    if (in.down && !prevIn.down) g_wuli_page = (g_wuli_page + 1) % 3;
     if (in.k3 && !prevIn.k3) sp_paused = !sp_paused;
     if (in.k4 && !prevIn.k4) springResetMotion();
 
     if (g_wuli_page == 0) {
-        if (in.up && !prevIn.up) g_wuli_sel = (g_wuli_sel + 7) % 8; // reuse shared selector
-        if (in.down && !prevIn.down) g_wuli_sel = (g_wuli_sel + 1) % 8;
+        if (in.k1 && !prevIn.k1) g_wuli_sel = (g_wuli_sel + 7) % 8; // reuse shared selector
+        if (in.k2 && !prevIn.k2) g_wuli_sel = (g_wuli_sel + 1) % 8;
         sp_sel = g_wuli_sel;
         if (sp_sel <= 2 && in.x != 0) {
             if (sp_sel == 0) sp_m = fmaxf(0.5f, fminf(3.0f, sp_m + (in.x > 0 ? 1 : -1) * dt * 0.8f));
@@ -4926,8 +4929,8 @@ static void springInput(float dt) {
             sp_overlay ^= (uint8_t)(1u << (sp_sel - 5));
         }
     } else {
-        if ((in.up && !prevIn.up) || (in.down && !prevIn.down)) {
-            sp_graph = (sp_graph + ((in.down && !prevIn.down) ? 1 : 2)) % 3;
+        if ((in.k1 && !prevIn.k1) || (in.k2 && !prevIn.k2)) {
+            sp_graph = (sp_graph + ((in.k2 && !prevIn.k2) ? 1 : 2)) % 3;
             sp_paused = true;
         }
         if (in.x != 0) {
@@ -5157,7 +5160,10 @@ static void drawSpring() {
     springReadouts();
     springParamStrip();
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "C/D PAGE   L/R ADJUST   A PLAY/PAUSE   B RESET");
+    const char *foot = g_wuli_page == 1
+        ? "UP/DN PAGE  C/D TAB  L/R SCRUB  A PLAY  B RESET"
+        : "UP/DN PAGE  C/D PARAM  L/R ADJ  A PLAY  B RESET";
+    u8g2_DrawStr(g, 8, 288, foot);
 }
 
 static void freefallReset() {
