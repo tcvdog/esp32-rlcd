@@ -200,6 +200,7 @@ static void drawNotes();
 static void handleNotesInput();
 
 static bool g_dark_ui = false;
+static bool g_no_invert = false;
 static int g_wuli_page = 0;
 static int g_wuli_sel = 0;
 static float ph_v0 = 2.5f;
@@ -1764,6 +1765,7 @@ static void updateStatus(float dt) {
 
 static void drawStatus() {
     g_dark_ui = false;
+    g_no_invert = false;
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 4, 13, g_clock);
 
@@ -2563,7 +2565,7 @@ static void drawZhCentered(const ZhGlyph &z, int y) {
 static void drawCmdOverlay();
 static void drawBackButton() {
     if (g_mode == MODE_MENU) return;
-    u8g2_SetDrawColor(g, g_dark_ui ? 0 : 1);
+    u8g2_SetDrawColor(g, g_no_invert ? 0 : 1);
     u8g2_DrawFrame(g, 270, 1, 26, 15);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 276, 13, "<");
@@ -2572,7 +2574,7 @@ static void presentFrame() {
     if (g_cmd_recording || g_cmd_busy) drawCmdOverlay();
     drawBackButton();
     uint8_t *fb = u8g2_GetBufferPtr(g);
-    if (fb) {
+    if (fb && !g_no_invert) {
         size_t fbBytes = (size_t)u8g2_GetBufferTileWidth(g) *
                          u8g2_GetBufferTileHeight(g) * 8;
         for (size_t i = 0; i < fbBytes; ++i) fb[i] ^= 0xFF;
@@ -4566,6 +4568,7 @@ static void darkBegin() {
     u8g2_DrawBox(g, 0, 0, SCREEN_W, SCREEN_H);
     u8g2_SetDrawColor(g, 0);
     g_dark_ui = true;
+    g_no_invert = true;
 }
 
 static void darkHeader(const char *crumb, const char *title, int page) {
@@ -4715,14 +4718,14 @@ static void projectileParamStrip() {
     projectileParamText(g_wuli_sel, val, sizeof(val));
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     snprintf(b, sizeof(b), "> %s", PROJ_PARAM_NAME[g_wuli_sel]);
-    u8g2_DrawUTF8(g, 8, 262, b);
+    u8g2_DrawUTF8(g, 8, 258, b);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 160, 262, val);
+    u8g2_DrawStr(g, 160, 258, val);
     snprintf(b, sizeof(b), "v0 %.1f  h %.1f  g %.1f  %s  STROBE %s",
              ph_v0, ph_h, ph_g,
              ph_speed == 0 ? "0.1x" : (ph_speed == 1 ? "0.25x" : "1x"),
              (ph_overlay & 1) ? "ON" : "OFF");
-    u8g2_DrawStr(g, 8, 278, b);
+    u8g2_DrawStr(g, 8, 272, b);
 }
 
 static void drawProjectileScene() {
@@ -4960,14 +4963,14 @@ static void springParamStrip() {
     springParamText(g_wuli_sel, val, sizeof(val));
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     snprintf(b, sizeof(b), "> %s", SPRING_PARAM_NAME[g_wuli_sel]);
-    u8g2_DrawUTF8(g, 8, 262, b);
+    u8g2_DrawUTF8(g, 8, 258, b);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 170, 262, val);
+    u8g2_DrawStr(g, 170, 258, val);
     snprintf(b, sizeof(b), "A %.0fcm  phi %s  %s  F %s v %s a %s",
              sp_A, sp_phi < 0.1f ? "0" : (sp_phi < 2.0f ? "pi/2" : "pi"),
              sp_speed ? "1x" : ".25x",
              (sp_overlay & 1) ? "Y" : "N", (sp_overlay & 2) ? "Y" : "N", (sp_overlay & 4) ? "Y" : "N");
-    u8g2_DrawStr(g, 8, 278, b);
+    u8g2_DrawStr(g, 8, 272, b);
 }
 
 static void drawSpringCoil(int left, int right, int base, int amp, int coils) {
