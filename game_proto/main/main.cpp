@@ -199,8 +199,11 @@ static void notes_enter();
 static void drawNotes();
 static void handleNotesInput();
 
-static float ph_v0 = 15.0f;
-static float ph_h = 10.0f;
+static bool g_dark_ui = false;
+static int g_wuli_page = 0;
+static int g_wuli_sel = 0;
+static float ph_v0 = 2.5f;
+static float ph_h = 2.5f;
 static float ph_t = 0.0f;
 static float ph_x = 0.0f;
 static float ph_y = 10.0f;
@@ -209,11 +212,20 @@ static bool ph_landed = false;
 static float ph_tx[256];
 static float ph_ty[256];
 static int ph_tn = 0;
+static float ph_g = 9.8f;
+static int ph_speed = 2; // 0=0.1x 1=0.25x 2=1x
+static uint8_t ph_overlay = 0x0F; // strobe, x-proj, compare, vectors
+static bool ph_paused = false;
 static int g_phys_view = 0; // 0 list, 1 projectile, 2 spring, 3 freefall
 static int g_phys_cat = 0;  // 0 root, 1 middle, 2 high
 static int g_phys_sel = 0;
-static float sp_A = 35.0f, sp_k = 20.0f, sp_t = 0.0f;
-static bool sp_run = true;
+static float sp_A = 8.0f, sp_k = 20.0f, sp_t = 0.0f;
+static float sp_m = 1.0f, sp_phi = PI_F;
+static bool sp_paused = false;
+static int sp_speed = 1;
+static uint8_t sp_overlay = 0x07;
+static int sp_graph = 0;
+static int sp_sel = 0;
 static float ff_h = 45.0f, ff_t = 0.0f, ff_y = 45.0f;
 static bool ff_run = false, ff_landed = false;
 static int g_phys_off = 0;
@@ -358,6 +370,12 @@ static void physicsReset();
 static void projectileInput(float dt);
 static void projectileUpdate(float dt);
 static void drawProjectile();
+static void drawProjectileFormula();
+static void drawSpringFormula();
+static void drawPhysicsHint(int view) {
+    (void)view;
+}
+
 static void springReset();
 static void springInput(float dt);
 static void springUpdate(float dt);
@@ -1745,6 +1763,7 @@ static void updateStatus(float dt) {
 }
 
 static void drawStatus() {
+    g_dark_ui = false;
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 4, 13, g_clock);
 
@@ -2144,8 +2163,17 @@ static esp_err_t ota_physics_get(httpd_req_t *req) {
         view = atoi(v);
     }
     if (view < 1 || view > 59) view = 1;
+    char pg[8] = {0};
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+        httpd_query_key_value(q, "page", pg, sizeof(pg)) == ESP_OK) {
+        g_wuli_page = atoi(pg) % 3;
+    } else {
+        g_wuli_page = 0;
+    }
     g_phys_cat = 2;
     g_phys_view = view;
+    if (view == 1) physicsReset();
+    else if (view == 2) springReset();
     g_mode = MODE_PHYSICS;
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
@@ -2535,7 +2563,7 @@ static void drawZhCentered(const ZhGlyph &z, int y) {
 static void drawCmdOverlay();
 static void drawBackButton() {
     if (g_mode == MODE_MENU) return;
-    u8g2_SetDrawColor(g, 1);
+    u8g2_SetDrawColor(g, g_dark_ui ? 0 : 1);
     u8g2_DrawFrame(g, 270, 1, 26, 15);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 276, 13, "<");
@@ -4532,170 +4560,419 @@ static void handleVoiceInput() {
 }
 
 
-static void physicsReset() {
+static void darkBegin() {
+    u8g2_ClearBuffer(g);
+    u8g2_SetDrawColor(g, 1);
+    u8g2_DrawBox(g, 0, 0, SCREEN_W, SCREEN_H);
+    u8g2_SetDrawColor(g, 0);
+    g_dark_ui = true;
+}
+
+static void darkHeader(const char *crumb, const char *title, int page) {
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 8, 10, crumb);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+    u8g2_DrawUTF8(g, 8, 32, title);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    char pg[16];
+    snprintf(pg, sizeof(pg), "%d/3", page + 1);
+    u8g2_DrawStr(g, 350, 12, pg);
+    u8g2_DrawHLine(g, 8, 38, 384);
+}
+
+static void drawCard(int x, int y, int w, int h) {
+    u8g2_DrawFrame(g, x, y, w, h);
+}
+
+static void drawArrow(int x0, int y0, int x1, int y1) {
+    u8g2_DrawLine(g, x0, y0, x1, y1);
+    float dx = (float)(x1 - x0), dy = (float)(y1 - y0);
+    float len = sqrtf(dx * dx + dy * dy);
+    if (len < 1.0f) return;
+    float ux = dx / len, uy = dy / len;
+    int ax = x1 - (int)(ux * 5 - uy * 3);
+    int ay = y1 - (int)(uy * 5 + ux * 3);
+    int bx = x1 - (int)(ux * 5 + uy * 3);
+    int by = y1 - (int)(uy * 5 - ux * 3);
+    u8g2_DrawLine(g, x1, y1, ax, ay);
+    u8g2_DrawLine(g, x1, y1, bx, by);
+}
+
+static void drawDashH(int x0, int x1, int y, int dash) {
+    for (int x = x0; x < x1; x += dash * 2) u8g2_DrawHLine(g, x, y, dash);
+}
+static void drawDashV(int x, int y0, int y1, int dash) {
+    for (int y = y0; y < y1; y += dash * 2) u8g2_DrawVLine(g, x, y, dash);
+}
+
+static void projectileResetMotion() {
     ph_t = 0.0f; ph_x = 0.0f; ph_y = ph_h;
-    ph_flying = false; ph_landed = false; ph_tn = 0;
+    ph_flying = false; ph_landed = false; ph_paused = false; ph_tn = 0;
+}
+
+static void physicsReset() {
+    projectileResetMotion();
+}
+
+static float projectile_tfall() {
+    return sqrtf(fmaxf(0.05f, 2.0f * ph_h / ph_g));
+}
+
+static const char *PROJ_PARAM_NAME[8] = {
+    "初速度 v0", "高度 h", "重力 g", "播放速度",
+    "频闪点", "x 投影", "自由落体对比球", "速度矢量"
+};
+
+static void projectileParamText(int i, char *b, size_t n) {
+    switch (i) {
+        case 0: snprintf(b, n, "%.2f m/s", ph_v0); break;
+        case 1: snprintf(b, n, "%.2f m", ph_h); break;
+        case 2: snprintf(b, n, "%.2f m/s2", ph_g); break;
+        case 3: snprintf(b, n, "%s", ph_speed == 0 ? "0.1x" : (ph_speed == 1 ? "0.25x" : "1x")); break;
+        case 4: snprintf(b, n, "%s", (ph_overlay & 1) ? "ON" : "OFF"); break;
+        case 5: snprintf(b, n, "%s", (ph_overlay & 2) ? "ON" : "OFF"); break;
+        case 6: snprintf(b, n, "%s", (ph_overlay & 4) ? "ON" : "OFF"); break;
+        default: snprintf(b, n, "%s", (ph_overlay & 8) ? "ON" : "OFF"); break;
+    }
 }
 
 static void projectileInput(float dt) {
-    if (!ph_flying) {
-        if (in.x < 0) ph_v0 = fmaxf(5.0f, ph_v0 - dt * 12.0f);
-        if (in.x > 0) ph_v0 = fminf(30.0f, ph_v0 + dt * 12.0f);
-        if (in.down) ph_h = fmaxf(0.0f, ph_h - dt * 9.0f);
-        if (in.up) ph_h = fminf(20.0f, ph_h + dt * 9.0f);
-        if (!ph_landed) ph_y = ph_h;
-    }
+    if (in.k1 && !prevIn.k1) g_wuli_page = (g_wuli_page + 2) % 3;
+    if (in.k2 && !prevIn.k2) g_wuli_page = (g_wuli_page + 1) % 3;
     if (in.k3 && !prevIn.k3) {
-        if (ph_flying || ph_landed) physicsReset();
-        else { ph_flying = true; ph_landed = false; ph_t = 0; ph_x = 0; ph_y = ph_h; ph_tn = 0; }
+        if (ph_flying) ph_paused = !ph_paused;
+        else {
+            physicsReset();
+            ph_flying = true; ph_paused = false;
+            ph_t = 0; ph_x = 0; ph_y = ph_h;
+        }
     }
     if (in.k4 && !prevIn.k4) physicsReset();
+
+    if (g_wuli_page == 0) {
+        if (in.up && !prevIn.up) g_wuli_sel = (g_wuli_sel + 7) % 8;
+        if (in.down && !prevIn.down) g_wuli_sel = (g_wuli_sel + 1) % 8;
+        if (g_wuli_sel <= 2 && in.x != 0) {
+            if (g_wuli_sel == 0) ph_v0 = fmaxf(1.0f, fminf(6.0f, ph_v0 + (in.x > 0 ? 1 : -1) * dt * 1.2f));
+            else if (g_wuli_sel == 1) ph_h = fmaxf(0.5f, fminf(5.0f, ph_h + (in.x > 0 ? 1 : -1) * dt * 0.8f));
+            else ph_g = fmaxf(8.0f, fminf(20.0f, ph_g + (in.x > 0 ? 1 : -1) * dt * 1.5f));
+            if (!ph_flying) ph_y = ph_h;
+        } else if (g_wuli_sel == 3 && in.x != 0 && !prevIn.x) {
+            ph_speed = (ph_speed + (in.x > 0 ? 1 : 2)) % 3;
+        } else if (g_wuli_sel >= 4 && in.x != 0 && !prevIn.x) {
+            ph_overlay ^= (uint8_t)(1u << (g_wuli_sel - 4));
+        }
+    } else {
+        // Page 2 graph: up/down toggles y-t/x-t; left/right scrubs time.
+        if ((in.up && !prevIn.up) || (in.down && !prevIn.down)) {
+            ph_overlay ^= 0x10;
+            ph_paused = true;
+        }
+        if (in.x != 0) {
+            ph_paused = true;
+            float tmax = projectile_tfall();
+            ph_t = fmaxf(0.0f, fminf(tmax, ph_t + (in.x > 0 ? 1 : -1) * dt * 0.35f));
+            ph_x = ph_v0 * ph_t;
+            ph_y = ph_h - 0.5f * ph_g * ph_t * ph_t;
+            ph_flying = true;
+            if (ph_t >= tmax) { ph_landed = true; ph_flying = false; }
+        }
+    }
     prevIn = in;
 }
 
 static void projectileUpdate(float dt) {
-    if (!ph_flying) return;
-    ph_t += dt; ph_x = ph_v0 * ph_t; ph_y = ph_h - 0.5f * 9.8f * ph_t * ph_t;
-    if (ph_y <= 0.0f) { ph_y = 0; ph_flying = false; ph_landed = true; }
+    if (!ph_flying || ph_paused) return;
+    float mult = ph_speed == 0 ? 0.1f : (ph_speed == 1 ? 0.25f : 1.0f);
+    ph_t += dt * mult;
+    ph_x = ph_v0 * ph_t;
+    ph_y = ph_h - 0.5f * ph_g * ph_t * ph_t;
+    if (ph_y <= 0.0f) {
+        ph_y = 0; ph_flying = false; ph_landed = true;
+    }
     if (ph_tn < 256) { ph_tx[ph_tn] = ph_x; ph_ty[ph_tn] = ph_y; ph_tn++; }
 }
 
-static const char *PHYS_HINT[60] = {
-    "",
-    "平抛：水平速度不变，竖直自由落体",
-    "弹簧：周期与振幅无关",
-    "自由落体：轻重不影响 g",
-    "匀速：x 与 t 成正比",
-    "匀加速：a 不是速度",
-    "单摆：周期与质量无关",
-    "合力：不是 F1+F2 直接相加",
-    "运动合成：位移和速度都是矢量",
-    "牛顿第二定律：a 与 F、m 有关，不是速度",
-    "静摩擦：大小随外力变化，不是固定值",
-    "胡克定律：F = kx，伸长与拉力成正比",
-    "滑轮：同一根轻绳张力相同",
-    "圆周：速度沿切线，向心加速度指向圆心",
-    "向心力：不是额外的新力，是合力的效果",
-    "机械功：W = Fs，力和位移同向才做正功",
-    "动能：速度平方，速度加倍动能四倍",
-    "势能：先选零势能面",
-    "机械能守恒：只有重力/弹力做功时成立",
-    "功率：P = Fv，表示做功快慢",
-    "冲量：J = Ft，是过程量",
-    "动量：p = mv，方向与速度相同",
-    "弹性碰撞：动量和动能都守恒",
-    "完全非弹性碰撞：只有动量守恒",
-    "反冲：总动量守恒，速度不是凭空产生",
-    "欧姆：I = U/R，电阻不是电压",
-    "串联：电流相同，电压分配",
-    "并联：电压相同，电流分流",
-    "闭合电路：U = E - Ir，内阻分压",
-    "变阻器：改变接入电阻，不是改变电源",
-    "安培力：F = BIL，方向用左手定则",
-    "法拉第：感应电动势由磁通量变化率决定",
-    "楞次：感应电流阻碍磁通量变化",
-    "机械波：质点上下振动，波形向前传播",
-    "干涉：两列波频率相同、相位差稳定",
-    "折射：从光疏到光密，折射角变小",
-    "全反射：从光密到光疏，入射角大于临界角",
-    "透镜：1/f = 1/u + 1/v",
-    "双缝：条纹间距与波长、缝距有关",
-    "棱镜：不同颜色折射率不同",
-    "理想气体：PV = nRT",
-    "等温：温度不变，PV 为常数",
-    "热传递：从高温流向低温，直到同温",
-    "光电效应：频率低于截止频率就没有光电子",
-    "黑体：温度越高，峰值波长越短",
-    "衰变：半衰期是剩一半所需时间",
-    "弹力：弹簧伸长越多，拉力越大",
-    "二力平衡：同体、等大、反向、共线",
-    "同一直线二力：同向相加，反向相减",
-    "声音：振动产生声，介质传播声",
-    "平面镜：像与物关于镜面对称",
-    "浮力：F浮 = rho液 g V排",
-    "杠杆：F1 L1 = F2 L2",
-    "平均速度：v=s/t，不是速度的平均",
-    "密度：rho=m/V，质量与体积的比",
-    "液体压强：p=rho g h，与深度有关",
-    "电功率：P=UI，表示消耗电能的快慢",
-    "电荷：同种相斥，异种相吸",
-    "电流表：串联接入，不能并联",
-    "焦耳定律：Q=I2Rt"
-};
+static void projectileReadouts() {
+    float tmax = projectile_tfall();
+    float range = ph_v0 * tmax;
+    float vx = ph_v0;
+    float vy = -ph_g * ph_t;
+    float v = sqrtf(vx * vx + vy * vy);
+    char b[96];
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    snprintf(b, sizeof(b), "vx %5.2f   vy %6.2f   v %5.2f m/s", vx, vy, v);
+    u8g2_DrawStr(g, 8, 212, b);
+    snprintf(b, sizeof(b), "t %4.2fs  x %4.2fm  y %4.2fm", ph_t, ph_x, ph_y);
+    u8g2_DrawStr(g, 8, 228, b);
+    snprintf(b, sizeof(b), "tfall %4.2fs   R %4.2fm   g %4.2f", tmax, range, ph_g);
+    u8g2_DrawStr(g, 8, 244, b);
+}
 
-static void drawPhysicsHint(int view) {
+static void projectileParamStrip() {
+    char val[32], b[96];
+    projectileParamText(g_wuli_sel, val, sizeof(val));
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 8, 276, PHYS_HINT[view]);
+    snprintf(b, sizeof(b), "> %s", PROJ_PARAM_NAME[g_wuli_sel]);
+    u8g2_DrawUTF8(g, 8, 262, b);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 160, 262, val);
+    snprintf(b, sizeof(b), "v0 %.1f  h %.1f  g %.1f  %s  STROBE %s",
+             ph_v0, ph_h, ph_g,
+             ph_speed == 0 ? "0.1x" : (ph_speed == 1 ? "0.25x" : "1x"),
+             (ph_overlay & 1) ? "ON" : "OFF");
+    u8g2_DrawStr(g, 8, 278, b);
+}
+
+static void drawProjectileScene() {
+    drawCard(8, 44, 384, 156);
+    const int L = 34, R = 380, T = 56, B = 186;
+    float tmax = projectile_tfall();
+    float range = ph_v0 * tmax;
+    if (range < 0.2f) range = 0.2f;
+    float sx = (R - L - 8) / range;
+    float sy = (B - T - 8) / fmaxf(0.2f, ph_h);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    for (int i = 0; i <= 4; ++i) {
+        int y = B - i * (B - T) / 4;
+        drawDashH(L, R, y, 2);
+        char q[16]; snprintf(q, sizeof(q), "%.1f", ph_h * i / 4.0f);
+        u8g2_DrawStr(g, 2, y + 4, q);
+    }
+    for (int i = 0; i <= 4; ++i) {
+        int x = L + i * (R - L) / 4;
+        drawDashV(x, T, B, 2);
+        char q[16]; snprintf(q, sizeof(q), "%.1f", range * i / 4.0f);
+        u8g2_DrawStr(g, x - 6, B + 12, q);
+    }
+    u8g2_DrawLine(g, L, B, R, B);
+    u8g2_DrawLine(g, L, T, L, B);
+    u8g2_DrawStr(g, 8, 54, "y/m");
+    u8g2_DrawStr(g, 344, B + 12, "x/m");
+    u8g2_DrawStr(g, L - 8, B + 12, "O");
+
+    // Launch platform at (L,T).
+    u8g2_DrawLine(g, L, T, L + 24, T);
+    u8g2_DrawLine(g, L, T, L, T + 9);
+    u8g2_DrawLine(g, L + 21, T, L + 21, T + 9);
+
+    // Ghost comparison / free-fall reference.
+    if (ph_overlay & 4) {
+        drawDashV(L + 12, T, B, 3);
+        float y0 = T + (ph_h - ph_y) * sy;
+        u8g2_DrawDisc(g, L + 12, (int)y0, 2, U8G2_DRAW_ALL);
+    }
+
+    // Theoretical trajectory, dashed.
+    for (int k = 0; k < 120; ++k) {
+        float t0 = tmax * k / 120.0f, t1 = tmax * (k + 1) / 120.0f;
+        int x0 = L + (int)(ph_v0 * t0 * sx);
+        int y0 = B - (int)((ph_h - 0.5f * ph_g * t0 * t0) * sy);
+        int x1 = L + (int)(ph_v0 * t1 * sx);
+        int y1 = B - (int)((ph_h - 0.5f * ph_g * t1 * t1) * sy);
+        if (k % 3 != 0) u8g2_DrawLine(g, x0, y0, x1, y1);
+    }
+
+    // Strobe points.
+    if (ph_overlay & 1) {
+        for (float tt = 0; tt <= tmax; tt += 0.055f) {
+            int px = L + (int)(ph_v0 * tt * sx);
+            int py = B - (int)((ph_h - 0.5f * ph_g * tt * tt) * sy);
+            u8g2_DrawDisc(g, px, py, 1, U8G2_DRAW_ALL);
+        }
+    }
+
+    int bx = L + (int)(ph_x * sx);
+    int by = B - (int)(ph_y * sy);
+    if (bx < L) bx = L;
+    if (bx > R) bx = R;
+    if (by < T) by = T;
+    if (by > B) by = B;
+
+    if (ph_overlay & 2) drawDashV(bx, by, B, 3);
+    if (ph_overlay & 8) {
+        float vy = -ph_g * ph_t;
+        drawArrow(bx, by, bx + (int)(ph_v0 * 5), by);
+        drawArrow(bx, by, bx, by - (int)(-vy * 5));
+        drawArrow(bx, by, bx + (int)(ph_v0 * 5), by - (int)(-vy * 5));
+    }
+    u8g2_DrawDisc(g, bx, by, 4, U8G2_DRAW_ALL);
+    u8g2_DrawCircle(g, bx, by, 5, U8G2_DRAW_ALL);
+
+    // Range marker.
+    int rx = L + (int)(range * sx);
+    u8g2_DrawLine(g, rx, B - 5, rx, B);
+    u8g2_DrawLine(g, rx - 4, B, rx + 4, B);
+    char b[32]; snprintf(b, sizeof(b), "R %.2fm", range);
+    u8g2_DrawStr(g, L + 8, B - 22, b);
+}
+
+static void drawProjectileGraph() {
+    drawCard(8, 44, 384, 156);
+    const int L = 54, R = 378, T = 60, B = 184;
+    float tmax = projectile_tfall();
+    float range = ph_v0 * tmax;
+    bool yt = (ph_overlay & 0x10) == 0; // bit4 selects x-t
+    float ymax = yt ? fmaxf(0.2f, ph_h) : fmaxf(0.2f, range);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 12, 56, yt ? "y-t" : "x-t");
+    u8g2_DrawStr(g, R - 30, 56, yt ? "y/m" : "x/m");
+    u8g2_DrawStr(g, L + 2, T - 4, "t/s");
+    for (int i = 0; i <= 4; ++i) {
+        int y = B - i * (B - T) / 4;
+        drawDashH(L, R, y, 2);
+        char q[16]; snprintf(q, sizeof(q), "%.1f", ymax * i / 4.0f);
+        u8g2_DrawStr(g, 4, y + 4, q);
+    }
+    for (int i = 0; i <= 4; ++i) {
+        int x = L + i * (R - L) / 4;
+        drawDashV(x, T, B, 2);
+        char q[16]; snprintf(q, sizeof(q), "%.2f", tmax * i / 4.0f);
+        u8g2_DrawStr(g, x - 8, B + 12, q);
+    }
+    u8g2_DrawLine(g, L, B, R, B); u8g2_DrawLine(g, L, T, L, B);
+    for (int k = 0; k < 120; ++k) {
+        float t0 = tmax * k / 120.0f, t1 = tmax * (k + 1) / 120.0f;
+        float v0 = yt ? ph_h - 0.5f * ph_g * t0 * t0 : ph_v0 * t0;
+        float v1 = yt ? ph_h - 0.5f * ph_g * t1 * t1 : ph_v0 * t1;
+        int x0 = L + (int)(t0 / tmax * (R - L));
+        int y0 = B - (int)(v0 / ymax * (B - T));
+        int x1 = L + (int)(t1 / tmax * (R - L));
+        int y1 = B - (int)(v1 / ymax * (B - T));
+        if (k % 3 != 0) u8g2_DrawLine(g, x0, y0, x1, y1);
+    }
+    int cx = L + (int)(ph_t / tmax * (R - L));
+    int cy = B - (int)((yt ? ph_y : ph_x) / ymax * (B - T));
+    if (cx < L) cx = L;
+    if (cx > R) cx = R;
+    if (cy < T) cy = T;
+    if (cy > B) cy = B;
+    drawDashV(cx, T, B, 3);
+    u8g2_DrawDisc(g, cx, cy, 3, U8G2_DRAW_ALL);
 }
 
 static void drawProjectile() {
-    drawStatus();
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 166, 38, "平抛运动");
-    const int OX = 42, GY = 226;
-    float range = ph_v0 * sqrtf(fmaxf(0.1f, 2.0f * ph_h / 9.8f));
-    if (range < 8.0f) range = 8.0f;
-    float xs = 330.0f / range; if (xs < 3.0f) xs = 3.0f;
-    if (xs > 12.0f) xs = 12.0f;
-    float ys = 150.0f / fmaxf(ph_h, 5.0f); if (ys < 3.0f) ys = 3.0f;
-    if (ys > 12.0f) ys = 12.0f;
-    for (int i = 0; i <= 4; ++i) {
-        u8g2_DrawHLine(g, OX, GY - i * 36, 340);
-        u8g2_DrawVLine(g, OX + i * 84, 58, GY - 58);
-    }
-    u8g2_DrawHLine(g, OX, GY, 340); u8g2_DrawVLine(g, OX, 58, GY - 58);
-    for (int i = 0; i < ph_tn; ++i) {
-        int px = OX + (int)(ph_tx[i] * xs), py = GY - (int)(ph_ty[i] * ys);
-        if (py < 58) py = 58;
-        u8g2_DrawPixel(g, px, py); if (i % 4 == 0) u8g2_DrawPixel(g, px + 1, py);
-    }
-    int bx = OX + (int)(ph_x * xs), by = GY - (int)(ph_y * ys);
-    if (by < 58) by = 58;
-    if (by > GY) by = GY;
-    u8g2_DrawDisc(g, bx, by, 5, U8G2_DRAW_ALL);
-    if (ph_landed) {
-        int lx = OX + (int)(range * xs);
-        u8g2_DrawLine(g, lx, GY - 8, lx, GY);
-        u8g2_DrawLine(g, lx - 4, GY - 4, lx + 4, GY - 4);
-    }
-    char b[80]; u8g2_SetFont(g, u8g2_font_7x13_tf);
-    snprintf(b, sizeof(b), "v0 %.0f m/s   h %.0f m", ph_v0, ph_h); u8g2_DrawStr(g, 8, 244, b);
-    snprintf(b, sizeof(b), "t %.2fs x %.1fm y %.1fm vx %.1f vy %.1f", ph_t, ph_x, ph_y, ph_v0, -9.8f * ph_t); u8g2_DrawStr(g, 8, 260, b);
-    // Axis ticks / units.
+    if (!ph_flying && !ph_landed) ph_y = ph_h;
+    darkBegin();
+    darkHeader("曲线运动与万有引力 / 实验 2", "平抛运动", g_wuli_page);
+    if (g_wuli_page == 0) drawProjectileScene();
+    else if (g_wuli_page == 1) drawProjectileGraph();
+    else drawProjectileFormula();
+    projectileReadouts();
+    projectileParamStrip();
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char tick[16];
-    for (int i = 0; i <= 2; ++i) {
-        int ty = GY - i * (GY - 58) / 2;
-        snprintf(tick, sizeof(tick), "%.0fm", ph_h * i / 2.0f);
-        u8g2_DrawStr(g, 6, ty + 4, tick);
-    }
-    snprintf(tick, sizeof(tick), "%.0fm", range); u8g2_DrawStr(g, 330, GY - 4, tick);
-    drawPhysicsHint(1);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "L/R:V0 U/D:H A:FIRE B:RESET SW:BACK");
+    u8g2_DrawStr(g, 8, 292, "C/D PAGE   L/R ADJUST   A PLAY/PAUSE   B RESET");
+}
+
+static void springResetMotion() {
+    sp_t = 0.0f;
+    sp_paused = false;
 }
 
 static void springReset() {
-    sp_t = 0; sp_A = 35; sp_k = 20; sp_run = true;
+    sp_A = 8.0f; sp_k = 20.0f; sp_m = 1.0f;
+    sp_phi = PI_F; sp_speed = 1; sp_overlay = 0x07;
+    sp_graph = 0; sp_sel = 0;
+    springResetMotion();
+}
+
+static float spring_omega() { return sqrtf(sp_k / fmaxf(0.1f, sp_m)); }
+static float spring_T() { return 2.0f * PI_F / spring_omega(); }
+static float spring_x() { return sp_A * cosf(spring_omega() * sp_t + sp_phi); }
+static float spring_v() { return -sp_A * spring_omega() * sinf(spring_omega() * sp_t + sp_phi); }
+static float spring_a() { return -spring_omega() * spring_omega() * spring_x(); }
+
+static const char *SPRING_PARAM_NAME[8] = {
+    "质量 m", "劲度系数 k", "振幅 A", "初相 phi",
+    "播放速度", "回复力 F", "速度 v", "加速度 a"
+};
+
+static void springParamText(int i, char *b, size_t n) {
+    switch (i) {
+        case 0: snprintf(b, n, "%.1f kg", sp_m); break;
+        case 1: snprintf(b, n, "%.0f N/m", sp_k); break;
+        case 2: snprintf(b, n, "%.0f cm", sp_A); break;
+        case 3: snprintf(b, n, "%s", sp_phi < 0.1f ? "0" : (sp_phi < 2.0f ? "pi/2" : "pi")); break;
+        case 4: snprintf(b, n, "%s", sp_speed ? "1x" : "0.25x"); break;
+        case 5: snprintf(b, n, "%s", (sp_overlay & 1) ? "ON" : "OFF"); break;
+        case 6: snprintf(b, n, "%s", (sp_overlay & 2) ? "ON" : "OFF"); break;
+        default: snprintf(b, n, "%s", (sp_overlay & 4) ? "ON" : "OFF"); break;
+    }
 }
 
 static void springInput(float dt) {
-    if (in.x < 0) sp_A = fmaxf(8.0f, sp_A - dt * 20.0f);
-    if (in.x > 0) sp_A = fminf(65.0f, sp_A + dt * 20.0f);
-    if (in.down) sp_k = fmaxf(5.0f, sp_k - dt * 8.0f);
-    if (in.up) sp_k = fminf(45.0f, sp_k + dt * 8.0f);
-    if (in.k3 && !prevIn.k3) sp_run = !sp_run;
-    if (in.k4 && !prevIn.k4) springReset();
+    if (in.k1 && !prevIn.k1) g_wuli_page = (g_wuli_page + 2) % 3;
+    if (in.k2 && !prevIn.k2) g_wuli_page = (g_wuli_page + 1) % 3;
+    if (in.k3 && !prevIn.k3) sp_paused = !sp_paused;
+    if (in.k4 && !prevIn.k4) springResetMotion();
+
+    if (g_wuli_page == 0) {
+        if (in.up && !prevIn.up) g_wuli_sel = (g_wuli_sel + 7) % 8; // reuse shared selector
+        if (in.down && !prevIn.down) g_wuli_sel = (g_wuli_sel + 1) % 8;
+        sp_sel = g_wuli_sel;
+        if (sp_sel <= 2 && in.x != 0) {
+            if (sp_sel == 0) sp_m = fmaxf(0.5f, fminf(3.0f, sp_m + (in.x > 0 ? 1 : -1) * dt * 0.8f));
+            else if (sp_sel == 1) sp_k = fmaxf(5.0f, fminf(40.0f, sp_k + (in.x > 0 ? 1 : -1) * dt * 12.0f));
+            else sp_A = fmaxf(2.0f, fminf(12.0f, sp_A + (in.x > 0 ? 1 : -1) * dt * 4.0f));
+        } else if (sp_sel == 3 && in.x != 0 && !prevIn.x) {
+            sp_phi = sp_phi < 0.1f ? PI_F * 0.5f : (sp_phi < 2.0f ? PI_F : 0.0f);
+        } else if (sp_sel == 4 && in.x != 0 && !prevIn.x) {
+            sp_speed = !sp_speed;
+        } else if (sp_sel >= 5 && in.x != 0 && !prevIn.x) {
+            sp_overlay ^= (uint8_t)(1u << (sp_sel - 5));
+        }
+    } else {
+        if ((in.up && !prevIn.up) || (in.down && !prevIn.down)) {
+            sp_graph = (sp_graph + ((in.down && !prevIn.down) ? 1 : 2)) % 3;
+            sp_paused = true;
+        }
+        if (in.x != 0) {
+            sp_paused = true;
+            float T = spring_T();
+            sp_t = fmodf(sp_t + (in.x > 0 ? 1 : -1) * dt * 0.35f, 2.0f * T);
+            if (sp_t < 0) sp_t += 2.0f * T;
+        }
+    }
     prevIn = in;
 }
 
 static void springUpdate(float dt) {
-    if (sp_run) sp_t += dt;
+    if (!sp_paused) sp_t += dt * (sp_speed ? 1.0f : 0.25f);
 }
 
-static void draw_spring_coil(int left, int right, int base, int amp, int coils) {
+static void springReadouts() {
+    float T = spring_T(), w = spring_omega();
+    float x = spring_x(), v = spring_v(), a = spring_a();
+    float F = -sp_k * (x / 100.0f);
+    char b[96];
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    snprintf(b, sizeof(b), "T %4.2fs   f %4.2fHz   w %4.2f", T, 1.0f / T, w);
+    u8g2_DrawStr(g, 8, 212, b);
+    snprintf(b, sizeof(b), "x %+5.1fcm  v %+5.2f  a %+5.2f", x, v, a);
+    u8g2_DrawStr(g, 8, 228, b);
+    snprintf(b, sizeof(b), "F %+5.2fN   k %.0f   m %.1f", F, sp_k, sp_m);
+    u8g2_DrawStr(g, 8, 244, b);
+}
+
+static void springParamStrip() {
+    char val[32], b[96];
+    springParamText(g_wuli_sel, val, sizeof(val));
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    snprintf(b, sizeof(b), "> %s", SPRING_PARAM_NAME[g_wuli_sel]);
+    u8g2_DrawUTF8(g, 8, 262, b);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 170, 262, val);
+    snprintf(b, sizeof(b), "A %.0fcm  phi %s  %s  F %s v %s a %s",
+             sp_A, sp_phi < 0.1f ? "0" : (sp_phi < 2.0f ? "pi/2" : "pi"),
+             sp_speed ? "1x" : ".25x",
+             (sp_overlay & 1) ? "Y" : "N", (sp_overlay & 2) ? "Y" : "N", (sp_overlay & 4) ? "Y" : "N");
+    u8g2_DrawStr(g, 8, 278, b);
+}
+
+static void drawSpringCoil(int left, int right, int base, int amp, int coils) {
     int span = right - left;
-    if (span < 6) span = 6;
+    if (span < 8) span = 8;
     int px = left, py = base;
     for (int i = 1; i <= coils; ++i) {
         int x = left + span * i / coils;
@@ -4706,57 +4983,178 @@ static void draw_spring_coil(int left, int right, int base, int amp, int coils) 
     u8g2_DrawLine(g, px, py, right, base);
 }
 
-static void drawSpring() {
-    drawStatus();
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 166, 38, "弹簧振子");
-
-    const int wall = 42, eq = 210, track = 205;
-    const int massHalf = 18;
-    const int natX = eq - massHalf;
-    const int L0 = natX - wall;
-
-    float omega = sqrtf(sp_k / 1.0f);
-    float x = sp_A * cosf(omega * sp_t);
-    int massX = eq + (int)x;
+static void drawSpringScene() {
+    drawCard(8, 44, 384, 156);
+    const int wall = 44, eq = 254, track = 184;
+    const int massHalf = 24;
+    float xcm = spring_x();
+    int massX = eq + (int)(xcm * 6.0f);
     int springRight = massX - massHalf;
-    int L = springRight - wall;
-    int dx = L - L0;
-
-    u8g2_DrawLine(g, wall, 78, wall, track + 8);
-    u8g2_DrawLine(g, 22, track + 8, 382, track + 8);
-    u8g2_DrawLine(g, wall, track + 8, wall, track + 18);
-
-    // Natural length marker.
-    u8g2_DrawLine(g, natX, 58, natX, track + 18);
+    if (springRight < wall + 20) springRight = wall + 20;
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, natX - 10, 54, "L0");
+    // Wall and floor.
+    u8g2_DrawLine(g, wall, 58, wall, track);
+    u8g2_DrawLine(g, wall, track, 382, track);
+    u8g2_DrawLine(g, wall - 8, 58, wall, 58);
+    drawSpringCoil(wall, springRight, track - 48, 10, 13);
+    // Equilibrium and amplitude guide.
+    drawDashV(eq, 56, track, 3);
+    drawDashV(eq + (int)(sp_A * 6), 62, track - 4, 2);
+    drawDashV(eq - (int)(sp_A * 6), 62, track - 4, 2);
+    u8g2_DrawStr(g, eq - 10, 60, "x=0");
+    char b[24];
+    snprintf(b, sizeof(b), "-A"); u8g2_DrawStr(g, eq - (int)(sp_A * 6) - 14, 62, b);
+    snprintf(b, sizeof(b), "+A"); u8g2_DrawStr(g, eq + (int)(sp_A * 6) + 4, 62, b);
+    // Mass block.
+    u8g2_DrawFrame(g, massX - massHalf, track - 62, massHalf * 2, 30);
+    u8g2_DrawDisc(g, massX - 12, track - 34, 4, U8G2_DRAW_ALL);
+    u8g2_DrawDisc(g, massX + 12, track - 34, 4, U8G2_DRAW_ALL);
+    u8g2_DrawDisc(g, massX, track - 48, 3, U8G2_DRAW_ALL);
+    // Arrows: F opposite x, v according to velocity, a opposite x.
+    if (sp_overlay & 1) {
+        int dir = xcm >= 0 ? -1 : 1;
+        drawArrow(massX + dir * massHalf, track - 47, massX + dir * (massHalf + 28), track - 47);
+        u8g2_DrawStr(g, massX + dir * (massHalf + 10) - 3, track - 51, "F");
+    }
+    if (sp_overlay & 2) {
+        int dir = spring_v() >= 0 ? 1 : -1;
+        drawArrow(massX, track - 70, massX + dir * 28, track - 70);
+        u8g2_DrawStr(g, massX + dir * 12 - 3, track - 76, "v");
+    }
+    if (sp_overlay & 4) {
+        int dir = spring_a() >= 0 ? 1 : -1;
+        drawArrow(massX, track - 24, massX + dir * 24, track - 24);
+        u8g2_DrawStr(g, massX + dir * 10 - 3, track - 18, "a");
+    }
+}
 
-    draw_spring_coil(wall, springRight, track - 44, 11, 14);
-
-    // Mass and equilibrium line.
-    u8g2_DrawLine(g, eq, 55, eq, track + 18);
-    u8g2_DrawBox(g, massX - massHalf, track - 60, massHalf * 2, 30);
-    u8g2_DrawDisc(g, massX, track - 45, 5, U8G2_DRAW_ALL);
-
-    // Force arrow: x>0 means extended, force points back to equilibrium.
-    int dir = (x >= 0) ? -1 : 1;
-    int fx0 = massX + dir * massHalf;
-    int fx1 = fx0 + dir * 32;
-    u8g2_DrawLine(g, fx0, track - 45, fx1, track - 45);
-    u8g2_DrawLine(g, fx1, track - 45, fx1 - dir * 6, track - 50);
-    u8g2_DrawLine(g, fx1, track - 45, fx1 - dir * 6, track - 40);
-    u8g2_DrawStr(g, fx1 - 12, track - 52, "F");
-
-    char b[96];
-    const char *state = (dx < -2) ? "压缩" : (dx > 2 ? "伸长" : "自然");
-    snprintf(b, sizeof(b), "L0 %d  L %d  dx %+d  %s", L0, L, dx, state);
-    u8g2_DrawStr(g, 8, 244, b);
-    snprintf(b, sizeof(b), "t %.2fs x %+.0f v %+.0f T %.2fs", sp_t, x, -sp_A * omega * sinf(omega * sp_t), 2.0f * PI_F / omega);
-    u8g2_DrawStr(g, 8, 260, b);
-    drawPhysicsHint(2);
+static void springAxes(int L, int R, int T, int B, float ymin, float ymax, const char *ylab) {
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "L/R:AMP U/D:K A:PAUSE B:RESET SW:BACK");
+    for (int i = 0; i <= 4; ++i) {
+        int y = B - i * (B - T) / 4;
+        drawDashH(L, R, y, 2);
+        char q[16]; snprintf(q, sizeof(q), "%.1f", ymin + (ymax - ymin) * i / 4.0f);
+        u8g2_DrawStr(g, 2, y + 4, q);
+    }
+    u8g2_DrawLine(g, L, B, R, B);
+    u8g2_DrawLine(g, L, T, L, B);
+    (void)ylab;
+}
+
+static void springPlotCurve(int L, int R, int T, int B, int mode, int series) {
+    float Tp = spring_T();
+    float tmax = 2.0f * Tp;
+    float w = spring_omega();
+    float E = 0.5f * sp_k * (sp_A / 100.0f) * (sp_A / 100.0f);
+    int prev_x = -1, prev_y = -1;
+    for (int k = 0; k <= 180; ++k) {
+        float t = tmax * k / 180.0f;
+        float x = sp_A * cosf(w * t + sp_phi);
+        float v = -sp_A * w * sinf(w * t + sp_phi);
+        float a = -w * w * x;
+        float val;
+        if (mode == 0) val = series == 0 ? x / fmaxf(0.1f, sp_A) : (series == 1 ? v / fmaxf(0.1f, sp_A * w) : a / fmaxf(0.1f, sp_A * w * w));
+        else {
+            float xx = x / 100.0f;
+            float U = 0.5f * sp_k * xx * xx;
+            float K = 0.5f * sp_m * v * v;
+            float tot = fmaxf(1e-6f, K + U);
+            val = series == 0 ? K / tot : (series == 1 ? U / tot : (K + U) / fmaxf(1e-6f, E));
+        }
+        int px = L + (int)(k * (R - L) / 180.0f);
+        int py = (mode == 0) ? (T + B) / 2 - (int)(val * (B - T) / 2)
+                            : B - (int)(val * (B - T));
+        if (prev_x >= 0) {
+            bool on = (series == 0) || (series == 1 && (k / 3) % 2 == 0) || (series == 2 && (k / 2) % 2 == 0);
+            if (on) u8g2_DrawLine(g, prev_x, prev_y, px, py);
+        }
+        prev_x = px; prev_y = py;
+    }
+}
+
+static void drawSpringGraph() {
+    drawCard(8, 44, 384, 156);
+    const int L = 54, R = 378, T = 64, B = 182;
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    const char *tabs[3] = { "PHASE", "ENERGY", "PERIOD" };
+    for (int i = 0; i < 3; ++i) {
+        int x = 220 + i * 54;
+        if (i == sp_graph) { u8g2_DrawBox(g, x - 4, 46, 50, 14); u8g2_SetDrawColor(g, 1); }
+        u8g2_DrawStr(g, x, 57, tabs[i]);
+        u8g2_SetDrawColor(g, 0);
+    }
+    if (sp_graph == 0) {
+        springAxes(L, R, T, B, -1.0f, 1.0f, "x/v/a");
+        springPlotCurve(L, R, T, B, 0, 0);
+        springPlotCurve(L, R, T, B, 0, 1);
+        springPlotCurve(L, R, T, B, 0, 2);
+        // Current time marker.
+        float Tp = spring_T();
+        float tt = fmodf(sp_t, 2.0f * Tp);
+        int cx = L + (int)(tt / (2.0f * Tp) * (R - L));
+        drawDashV(cx, T, B, 3);
+        u8g2_DrawStr(g, L + 2, T - 4, "x/v/a");
+        u8g2_DrawStr(g, L + 2, 196, "x");
+        u8g2_DrawStr(g, L + 16, 196, "v");
+        u8g2_DrawStr(g, L + 30, 196, "a");
+    } else if (sp_graph == 1) {
+        springAxes(L, R, T, B, 0.0f, 1.0f, "E/E0");
+        springPlotCurve(L, R, T, B, 1, 0);
+        springPlotCurve(L, R, T, B, 1, 1);
+        springPlotCurve(L, R, T, B, 1, 2);
+        u8g2_DrawStr(g, 44, 196, "K");
+        u8g2_DrawStr(g, 58, 196, "U");
+        u8g2_DrawStr(g, 72, 196, "E");
+    } else {
+        springAxes(L, R, T, B, 0.0f, 2.0f, "T/s");
+        float Tp = spring_T();
+        int y = B - (int)(Tp / 2.0f * (B - T));
+        u8g2_DrawLine(g, L, y, R, y);
+        for (int i = 0; i < 5; ++i) {
+            int x = L + i * (R - L) / 4;
+            u8g2_DrawDisc(g, x, y, 2, U8G2_DRAW_ALL);
+        }
+        u8g2_DrawStr(g, L + 10, y - 6, "T constant");
+    }
+}
+
+static void drawProjectileFormula() {
+    drawCard(8, 44, 384, 156);
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 20, 70, "原理 / 公式");
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 20, 96, "x = v0 * t          horizontal uniform");
+    u8g2_DrawStr(g, 20, 116, "y = h - 0.5*g*t^2   vertical free fall");
+    u8g2_DrawStr(g, 20, 136, "tfall = sqrt(2h/g)  independent of v0");
+    u8g2_DrawStr(g, 20, 156, "R = v0 * tfall");
+    u8g2_DrawStr(g, 20, 176, "y-t: parabola   x-t: straight line");
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 20, 188, "改 v0 只改射程；改 h、g 才改落地时间。");
+}
+
+static void drawSpringFormula() {
+    drawCard(8, 44, 384, 156);
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, 20, 70, "公式 / 详情");
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 20, 96, "F = -k*x          restoring force");
+    u8g2_DrawStr(g, 20, 116, "w = sqrt(k/m)");
+    u8g2_DrawStr(g, 20, 136, "T = 2*pi*sqrt(m/k)");
+    u8g2_DrawStr(g, 20, 156, "x = A*cos(w*t+phi)");
+    u8g2_DrawStr(g, 20, 176, "v = -A*w*sin(...)");
+    u8g2_DrawStr(g, 20, 196, "a = -w^2*x       T independent of A");
+}
+
+static void drawSpring() {
+    darkBegin();
+    darkHeader("机械振动 / 实验 1", "弹簧振子", g_wuli_page);
+    if (g_wuli_page == 0) drawSpringScene();
+    else if (g_wuli_page == 1) drawSpringGraph();
+    else drawSpringFormula();
+    springReadouts();
+    springParamStrip();
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 8, 292, "C/D PAGE   L/R ADJUST   A PLAY/PAUSE   B RESET");
 }
 
 static void freefallReset() {
@@ -6589,8 +6987,8 @@ static void handlePhysicsMenuInput() {
             int view = (g_phys_cat == 1) ? PHYS_MIDDLE_VIEW[g_phys_sel] : PHYS_HIGH_VIEW[g_phys_sel];
             if (view == 0) { g_phys_cat = 0; g_phys_sel = 0; g_phys_off = 0; }
             else {
-                if (view == 1) physicsReset();
-                else if (view == 2) springReset();
+                if (view == 1) { g_wuli_page = 0; g_wuli_sel = 0; physicsReset(); }
+                else if (view == 2) { g_wuli_page = 0; g_wuli_sel = 0; springReset(); }
                 else if (view == 3) freefallReset();
                 else if (view == 4) uniformReset();
                 else if (view == 5) accelReset();
