@@ -458,7 +458,7 @@ static float qcfDownAt = -10.0f;
 static int lastTapDir = 0;
 static float lastTapAt = -10.0f;
 
-enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18 };
+enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18, MODE_VIDEO = 19 };
 static int g_mode = MODE_MENU;
 static int g_menu_sel = 0;
 static int g_secret_step = 0;
@@ -472,7 +472,7 @@ static int g_wifi_count = 0, g_wifi_sel = 0;
 static char g_wifi_ssid[33] = "";
 static char g_wifi_pass[65] = "";
 static int g_key_page = 0, g_key_sel = 0;
-static int g_file_count = 0, g_file_sel = 0, g_file_view = 0;
+static int g_file_count = 0, g_file_sel = 0, g_file_view = 0, g_file_off = 0;
 static int g_info_page = 0;
 static int g_settings_sel = 0;
 static char g_file_names[24][40];
@@ -489,6 +489,12 @@ static volatile uint32_t g_mp3_pos = 0, g_mp3_total = 0;
 static char g_audio_path[300] = "";
 static uint8_t *g_img_gray = nullptr;
 static int g_music_count = 0, g_music_sel = 0, g_music_off = 0;
+static FILE *g_video_f = nullptr;
+static uint16_t g_video_w = 0, g_video_h = 0, g_video_frames = 0, g_video_idx = 0;
+static uint8_t g_video_fps = 0;
+static bool g_video_playing = false;
+static int64_t g_video_last_us = 0;
+static uint8_t g_video_frame[15000];
 static int g_music_files[24];
 static bool g_player_running = false;
 static bool g_player_paused = false;
@@ -1945,6 +1951,7 @@ static esp_err_t ota_note_post(httpd_req_t *req) {
 }
 
 static void files_enter();
+static bool video_open(const char *path);
 static void survey_start();
 static void survey_save();
 static void survey_build_report();
@@ -2928,6 +2935,79 @@ static void image_view_file() {
 static void files_free_text() {
 }
 
+static void video_close() {
+    if (g_video_f) { fclose(g_video_f); g_video_f = nullptr; }
+    g_video_playing = false;
+}
+
+static void video_draw() {
+    g_no_invert = false;
+    g_dark_ui = false;
+    if (!g_video_f || g_video_w != 400 || g_video_h != 300) return;
+    fseek(g_video_f, 12L + (long)g_video_idx * 15000L, SEEK_SET);
+    if (fread(g_video_frame, 1, sizeof(g_video_frame), g_video_f) != sizeof(g_video_frame)) return;
+    u8g2_ClearBuffer(g);
+    u8g2_SetDrawColor(g, 1);
+    u8g2_SetBitmapMode(g, 1);
+    u8g2_DrawBitmap(g, 0, 0, 50, 300, g_video_frame);
+    u8g2_SetBitmapMode(g, 0);
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    char b[32];
+    snprintf(b, sizeof(b), "%u/%u", g_video_idx + 1, g_video_frames);
+    u8g2_DrawStr(g, 8, 292, b);
+}
+
+static bool video_open(const char *path) {
+    video_close();
+    g_no_invert = false;
+    g_dark_ui = false;
+    g_video_f = fopen(path, "rb");
+    if (!g_video_f) return false;
+    uint8_t h[12];
+    if (fread(h, 1, sizeof(h), g_video_f) != sizeof(h) || memcmp(h, "VID1", 4) != 0) {
+        video_close(); return false;
+    }
+    g_video_w = h[4] | (h[5] << 8);
+    g_video_h = h[6] | (h[7] << 8);
+    g_video_fps = h[8];
+    g_video_frames = h[10] | (h[11] << 8);
+    if (g_video_w != 400 || g_video_h != 300 || g_video_fps == 0 || g_video_frames == 0) {
+        video_close(); return false;
+    }
+    g_video_idx = 0;
+    g_video_playing = true;
+    g_video_last_us = esp_timer_get_time();
+    g_mode = MODE_VIDEO;
+    return true;
+}
+
+static void video_input(float dt) {
+    (void)dt;
+    if (in.k3 && !prevIn.k3) g_video_playing = !g_video_playing;
+    if (in.x < 0 && prevIn.x >= 0) {
+        g_video_idx = g_video_idx ? g_video_idx - 1 : g_video_frames - 1;
+        video_draw();
+        g_video_last_us = esp_timer_get_time();
+    }
+    if (in.x > 0 && prevIn.x <= 0) {
+        g_video_idx = (g_video_idx + 1) % g_video_frames;
+        video_draw();
+        g_video_last_us = esp_timer_get_time();
+    }
+    prevIn = in;
+}
+
+static void video_update() {
+    if (!g_video_playing || !g_video_f) return;
+    int64_t now = esp_timer_get_time();
+    int64_t step = 1000000LL / g_video_fps;
+    if (now - g_video_last_us >= step) {
+        g_video_last_us += step;
+        g_video_idx = (g_video_idx + 1) % g_video_frames;
+        video_draw();
+    }
+}
+
 static void files_enter() {
     g_audio_path[0] = 0;
     wav_stop_playback();
@@ -2935,6 +3015,7 @@ static void files_enter() {
     if (g_img_gray) { heap_caps_free(g_img_gray); g_img_gray = nullptr; }
     g_file_view = 0;
     g_file_sel = 0;
+    g_file_off = 0;
     g_file_is_txt = g_file_is_wav = g_file_is_mp3 = g_file_is_gif = false;
     g_mode = MODE_FILES;
     files_scan();
@@ -2962,6 +3043,15 @@ static void files_preview() {
                     (n > 4 && strcasecmp(g_file_title + n - 4, ".bmp") == 0);
     FILE *f = fopen(path, "rb");
     if (!f) { snprintf(g_file_preview, sizeof(g_file_preview), "无法打开文件"); g_file_view = 1; return; }
+    int fn = strlen(g_file_title);
+    if (fn > 4 && strcasecmp(g_file_title + fn - 4, ".vid") == 0) {
+        fclose(f);
+        if (!video_open(path)) {
+            snprintf(g_file_preview, sizeof(g_file_preview), "VID 格式错误");
+            g_file_view = 1;
+        }
+        return;
+    }
     if (g_file_is_txt) {
         fclose(f);
         files_load_text_page();
@@ -2999,8 +3089,10 @@ static void drawFiles() {
         char b[64];
         snprintf(b, sizeof(b), "%d FILES", g_file_count);
         u8g2_DrawStr(g, 16, 56, b);
-        for (int i = 0; i < g_file_count && i < 8; ++i) {
-            int y = 76 + i * 23;
+        if (g_file_sel < g_file_off) g_file_off = g_file_sel;
+        if (g_file_sel >= g_file_off + 8) g_file_off = g_file_sel - 7;
+        for (int i = g_file_off; i < g_file_count && i < g_file_off + 8; ++i) {
+            int y = 76 + (i - g_file_off) * 23;
             snprintf(b, sizeof(b), "%.26s", g_file_names[i]);
             u8g2_DrawStr(g, 18, y, b);
             snprintf(b, sizeof(b), "%uK", (unsigned)((g_file_sizes[i] + 1023) / 1024));
@@ -3053,6 +3145,8 @@ static void handleFilesInput() {
     if (g_file_view == 0) {
         if (in.up && !prevIn.up && g_file_count) g_file_sel = (g_file_sel + g_file_count - 1) % g_file_count;
         if (in.down && !prevIn.down && g_file_count) g_file_sel = (g_file_sel + 1) % g_file_count;
+        if (g_file_sel < g_file_off) g_file_off = g_file_sel;
+        if (g_file_sel >= g_file_off + 8) g_file_off = g_file_sel - 7;
         if (in.k3 && !prevIn.k3) files_preview();
     } else if (g_file_is_txt) {
         if (in.up && !prevIn.up) {
@@ -3589,102 +3683,98 @@ static void drawFeedback() {
 }
 
 static void drawMenu() {
-    drawStatus();
-    drawZhCentered(MULU, 28);
+    g_no_invert = false;
+    g_dark_ui = false;
+    u8g2_ClearBuffer(g);
+    u8g2_SetDrawColor(g, 1);
 
-    const ZhGlyph *labels[6] = { &MENU_WORD, &MENU_PHYSICS, &MENU_SD, &MENU_MUSIC, &MENU_SURVEY, &MENU_SET };
-    const char *numbers[6] = { "01", "02", "03", "04", "05", "06" };
-    const char *desc[6] = {
-        "单词卡 · KET / PET 句子记忆",
-        "初中 / 高中 物理实验",
-        "SD 卡文件 · 音乐 · 图片",
-        "MP3 / WAV 歌曲播放器",
-        "前额叶修复自评问卷",
-        "系统 · 语音 · Wi-Fi · 游戏"
-    };
-
-    const int per_page = 4;
-    int page = g_menu_sel / per_page;
-    int slot = g_menu_sel % per_page;
-
+    // Top terminal rail.
+    u8g2_DrawBox(g, 0, 0, SCREEN_W, 22);
+    u8g2_SetDrawColor(g, 0);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char pagebuf[16];
-    snprintf(pagebuf, sizeof(pagebuf), "%d / 2", page + 1);
-    u8g2_DrawStr(g, 342, 28, pagebuf);
+    u8g2_DrawStr(g, 8, 15, "RLCD//OS");
+    u8g2_DrawStr(g, 300, 15, FW_VERSION);
+    u8g2_SetDrawColor(g, 1);
 
-    for (int i = 0; i < per_page; ++i) {
-        int item = page * per_page + i;
-        if (item >= 6) break;
-        int y = 60 + i * 44;
-        u8g2_SetFont(g, u8g2_font_9x15_tf);
-        u8g2_DrawStr(g, 36, y + 24, numbers[item]);
-        drawZh(*labels[item], 124, y);
-        if (item == g_menu_sel) {
-            u8g2_DrawFrame(g, 102, y - 2, 224, 34);
-            u8g2_DrawStr(g, 88, y + 24, ">");
-        }
-    }
-
+    // Section line and technical ticks.
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    int tw = u8g2_GetUTF8Width(g, desc[g_menu_sel]);
-    u8g2_DrawUTF8(g, (400 - tw) / 2, 244, desc[g_menu_sel]);
+    u8g2_DrawUTF8(g, 10, 38, "主菜单");
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 68, 38, "MAIN / MODULES");
+    u8g2_DrawStr(g, 324, 38, "06");
+    u8g2_DrawLine(g, 8, 42, 392, 42);
+    for (int x = 12; x < 392; x += 20) u8g2_DrawLine(g, x, 39, x, 42);
 
-    // Page dots.
-    for (int i = 0; i < 2; ++i) {
-        int x = 190 + i * 20;
-        if (i == page) u8g2_DrawDisc(g, x, 258, 4, U8G2_DRAW_ALL);
-        else u8g2_DrawCircle(g, x, 258, 3, U8G2_DRAW_ALL);
+    const char *labels[6] = { "单词记忆", "物理实验", "SD 卡", "音乐", "调查问卷", "设置" };
+    const char *codes[6] = { "WORD", "PHYSICS", "FILES", "AUDIO", "SURVEY", "CONFIG" };
+    const char *nums[6] = { "01", "02", "03", "04", "05", "06" };
+    const int x0[2] = { 10, 210 };
+    const int y0[3] = { 48, 106, 164 };
+    const int cw = 180, ch = 54;
+
+    for (int i = 0; i < 6; ++i) {
+        int x = x0[i % 2], y = y0[i / 2];
+        bool sel = (i == g_menu_sel);
+        if (sel) {
+            u8g2_SetDrawColor(g, 1);
+            u8g2_DrawBox(g, x, y, cw, ch);
+            u8g2_SetDrawColor(g, 0);
+        } else {
+            u8g2_SetDrawColor(g, 1);
+            u8g2_DrawFrame(g, x, y, cw, ch);
+            // Corner registration marks.
+            u8g2_DrawLine(g, x, y, x + 7, y);
+            u8g2_DrawLine(g, x, y, x, y + 7);
+            u8g2_DrawLine(g, x + cw - 7, y, x + cw, y);
+            u8g2_DrawLine(g, x + cw, y, x + cw, y + 7);
+            u8g2_DrawLine(g, x, y + ch - 7, x, y + ch);
+            u8g2_DrawLine(g, x, y + ch, x + 7, y + ch);
+        }
+        u8g2_SetFont(g, u8g2_font_9x15_tf);
+        u8g2_DrawStr(g, x + 8, y + 18, nums[i]);
+        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+        u8g2_DrawUTF8(g, x + 36, y + 22, labels[i]);
+        u8g2_SetFont(g, u8g2_font_7x13_tf);
+        u8g2_DrawStr(g, x + 8, y + 44, codes[i]);
+        // Small page arrow on selected module.
+        if (sel) u8g2_DrawStr(g, x + cw - 18, y + 44, ">");
+        u8g2_SetDrawColor(g, 1);
     }
 
+    // Telemetry rail.
+    u8g2_DrawLine(g, 8, 228, 392, 228);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 276, "LEFT/RIGHT: PAGE   UP/DOWN: SELECT");
-    u8g2_DrawStr(g, 8, 292, "A: ENTER");
+    char b[64];
+    snprintf(b, sizeof(b), "SD %s", g_sd_ok ? "OK" : "--");
+    u8g2_DrawStr(g, 10, 246, b);
+    snprintf(b, sizeof(b), "RTC %s", g_rtc_ok ? g_clock : "--:--");
+    u8g2_DrawStr(g, 92, 246, b);
+    snprintf(b, sizeof(b), "BAT %d%%", g_batt_pct);
+    u8g2_DrawStr(g, 246, 246, b);
+    snprintf(b, sizeof(b), "NET %s", g_wifi_sta ? "UP" : "--");
+    u8g2_DrawStr(g, 326, 246, b);
+
+    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    u8g2_DrawStr(g, 10, 272, "UP/DN  ROW     L/R  COL     A  OPEN");
+    u8g2_DrawStr(g, 10, 292, "RLCD-4.2  /  MONO 1BPP  /  LOCAL");
 }
 
-
 static void handleMenuInput() {
-    const int per_page = 4;
-    int page = g_menu_sel / per_page;
-    int slot = g_menu_sel % per_page;
-    int page_start = page * per_page;
-    int page_items = 6 - page_start;
-    if (page_items > 4) page_items = 4;
-
-    if (in.x < 0 && prevIn.x >= 0) {
-        page = (page + 1) % 2;
-        slot = 0;
-        g_menu_sel = page * per_page;
-    }
-    if (in.x > 0 && prevIn.x <= 0) {
-        page = (page + 1) % 2;
-        slot = 0;
-        g_menu_sel = page * per_page;
-    }
-    if (in.down && !prevIn.down) {
-        slot = (slot + 1) % page_items;
-        g_menu_sel = page_start + slot;
-    }
-    if (in.up && !prevIn.up) {
-        slot = (slot + page_items - 1) % page_items;
-        g_menu_sel = page_start + slot;
-    }
+    int row = g_menu_sel / 2, col = g_menu_sel % 2;
+    if (in.down && !prevIn.down) row = (row + 1) % 3;
+    if (in.up && !prevIn.up) row = (row + 2) % 3;
+    if (in.x < 0 && prevIn.x >= 0) col ^= 1;
+    if (in.x > 0 && prevIn.x <= 0) col ^= 1;
+    g_menu_sel = row * 2 + col;
 
     if (in.k3 && !prevIn.k3) {
-        if (g_menu_sel == 0) {
-            g_word_cat_sel = 0;
-            g_mode = MODE_WORD_MENU;
-        } else if (g_menu_sel == 1) {
-            g_phys_view = 0;
-            g_phys_cat = 0;
-            g_phys_sel = 0;
-            g_mode = MODE_PHYSICS;
-        } else if (g_menu_sel == 2) {
-            files_enter();
-        } else if (g_menu_sel == 3) {
-            music_enter();
-        } else {
-            g_settings_sel = 0;
-            g_mode = MODE_SETTINGS;
+        switch (g_menu_sel) {
+            case 0: g_word_cat_sel = 0; g_mode = MODE_WORD_MENU; break;
+            case 1: g_phys_view = 0; g_phys_cat = 0; g_phys_sel = 0; g_mode = MODE_PHYSICS; break;
+            case 2: files_enter(); break;
+            case 3: music_enter(); break;
+            case 4: g_mode = MODE_SURVEY_MENU; break;
+            case 5: g_settings_sel = 0; g_mode = MODE_SETTINGS; break;
         }
     }
     prevIn = in;
@@ -7477,6 +7567,7 @@ static void goBack() {
     if (g_mode == MODE_INFO || g_mode == MODE_HELP || g_mode == MODE_NOTES || g_mode == MODE_FEEDBACK) {
         g_mode = MODE_SETTINGS; return;
     }
+    if (g_mode == MODE_VIDEO) { video_close(); g_mode = MODE_FILES; g_file_view = 0; return; }
     if (g_mode == MODE_MUSIC) { music_stop(); g_mode = MODE_MENU; return; }
     if (g_mode == MODE_IMAGE) {
         if (g_img_gray) { heap_caps_free(g_img_gray); g_img_gray = nullptr; }
@@ -7838,6 +7929,10 @@ static void gameTask(void *arg) {
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
             drawFeedback();
+            presentFrame();
+        } else if (g_mode == MODE_VIDEO) {
+            video_input(realDt);
+            video_update();
             presentFrame();
         } else if (g_mode == MODE_MUSIC) {
             handleMusicInput();

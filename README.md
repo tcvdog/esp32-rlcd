@@ -10,7 +10,7 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 - Survey: 前额叶修复 5-question self-rating + generated report, saved to `/sdcard/survey_prefrontal.csv` and `/sdcard/survey_prefrontal_report.txt`
 - KET/PET sentence memory: 100 + 100 words with English/Chinese sentences
 - D-key sentence TTS: `/sdcard/tts/{ket,pet}_NNN.mp3` (generate with `tools/gen_sentence_tts.py`)
-- 6-item main menu: word, physics, SD, music, survey, settings; game entry hidden
+- 6-module 2×3 terminal-style main menu: word, physics, SD, music, survey, settings; game entry hidden
 - Word cards: 100 KET/PET words + 100 example sentences (6 basic review cards kept), Chinese meaning and sentence translation behind A
 - SD browser: TXT paging, WAV playback, MP3 playback, GIF/PNG/JPG/BMP first-frame viewing
 - Voice command C+D: WAV upload to PC, SenseVoice + Whisper dual ASR
