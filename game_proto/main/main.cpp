@@ -1977,9 +1977,11 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
             g_word_cat_sel = 0;
             char lv[8] = {0};
             if (httpd_query_key_value(q, "level", lv, sizeof(lv)) == ESP_OK) {
-                g_word_level = atoi(lv) ? 1 : 0;
+                int l = atoi(lv);
+                g_word_level = l < 0 ? 0 : (l > 3 ? 3 : l);
                 g_word_idx = 0;
-                g_word_reveal = true;
+                char rv[8] = {0};
+                g_word_reveal = !(httpd_query_key_value(q, "reveal", rv, sizeof(rv)) == ESP_OK && atoi(rv) == 0);
                 g_mode = MODE_WORD;
             } else g_mode = MODE_WORD_MENU;
         }
@@ -3788,8 +3790,8 @@ static void drawMenu() {
     u8g2_DrawStr(g, 320, 41, FW_VERSION);
     u8g2_SetDrawColor(g, 1);
 
-    const char *labels[6] = { "单词记忆", "物理实验", "SD 卡", "音乐", "调查问卷", "设置" };
-    const char *codes[6] = { "WORD", "PHYSICS", "FILES", "AUDIO", "SURVEY", "CONFIG" };
+    const char *labels[6] = { "闪卡记忆", "物理实验", "SD 卡", "音乐", "调查问卷", "设置" };
+    const char *codes[6] = { "FLASH", "PHYSICS", "FILES", "AUDIO", "SURVEY", "CONFIG" };
     const int top = 64, step = 29;
     for (int i = 0; i < 6; ++i) {
         int y = top + i * step;
@@ -4039,29 +4041,38 @@ static void handleSurvey() {
     prevIn = in;
 }
 
+static int word_level_count(int level) {
+    if (level == 0 || level == 1) return 100;
+    return 10;
+}
+
 static void drawWordMenu() {
     drawStatus();
-    drawZhCentered(MENU_WORD, 30);
-    const char *levels[2] = { "KET", "PET" };
-    const char *subs[2] = { "100 句 · 基础英语", "100 句 · 进阶英语" };
-    for (int i = 0; i < 2; ++i) {
-        int y = 88 + i * 72;
-        if (i == g_word_cat_sel) u8g2_DrawFrame(g, 40, y - 24, 320, 64);
+    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+    u8g2_DrawUTF8(g, 150, 36, "闪卡记忆");
+    const char *levels[4] = { "KET", "PET", "MATH", "PHYS" };
+    const char *subs[4] = { "100 句 · 英语基础", "100 句 · 英语进阶", "10 张 · 初中数学", "10 张 · 初中物理" };
+    const int xs[2] = { 20, 210 }, ys[2] = { 72, 152 };
+    for (int i = 0; i < 4; ++i) {
+        int x = xs[i % 2], y = ys[i / 2];
+        if (i == g_word_cat_sel) u8g2_DrawFrame(g, x - 2, y - 2, 174, 66);
+        u8g2_DrawFrame(g, x, y, 170, 62);
         u8g2_SetFont(g, u8g2_font_10x20_tf);
-        u8g2_DrawStr(g, 64, y + 8, levels[i]);
+        u8g2_DrawStr(g, x + 10, y + 24, levels[i]);
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        u8g2_DrawUTF8(g, 150, y + 6, subs[i]);
-        u8g2_SetFont(g, u8g2_font_7x13_tf);
-        u8g2_DrawStr(g, 340, y + 8, i == 0 ? "1-100" : "1-100");
+        u8g2_DrawUTF8(g, x + 10, y + 50, subs[i]);
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 272, "UP/DOWN SELECT   A ENTER");
-    u8g2_DrawStr(g, 8, 292, "SW: BACK");
+    u8g2_DrawStr(g, 12, 244, "ARROWS SELECT   A ENTER");
+    u8g2_DrawStr(g, 12, 268, "MATH / PHYS: 10 CARDS EACH");
+    u8g2_DrawStr(g, 12, 292, "SW: BACK");
 }
 
 static void handleWordMenu() {
-    if (in.up && !prevIn.up) g_word_cat_sel = (g_word_cat_sel + 1) % 2;
-    if (in.down && !prevIn.down) g_word_cat_sel = (g_word_cat_sel + 1) % 2;
+    if (in.up && !prevIn.up) g_word_cat_sel = (g_word_cat_sel + 2) % 4;
+    if (in.down && !prevIn.down) g_word_cat_sel = (g_word_cat_sel + 2) % 4;
+    if (in.x < 0 && prevIn.x >= 0) g_word_cat_sel ^= 1;
+    if (in.x > 0 && prevIn.x <= 0) g_word_cat_sel ^= 1;
     if (in.k3 && !prevIn.k3) {
         g_word_level = g_word_cat_sel;
         g_word_idx = 0;
@@ -4072,7 +4083,8 @@ static void handleWordMenu() {
 }
 
 static const WordCard *word_card_at(int level, int idx) {
-    const char *want = level ? "PET" : "KET";
+    const char *names[4] = { "KET", "PET", "MATH", "PHYS" };
+    const char *want = names[level & 3];
     int n = 0;
     for (int i = 0; i < WORD_COUNT; ++i) {
         if (strcmp(WORD_CARDS[i].level, want) != 0) continue;
@@ -4113,9 +4125,39 @@ static void draw_wrapped_english(const char *s, int x, int y, int maxw, int line
 
 static void drawWord() {
     drawStatus();
-    drawZhCentered(MENU_WORD, 40);
-
     const WordCard &w = *word_card_at(g_word_level, g_word_idx);
+    bool stem = (strcmp(w.level, "MATH") == 0 || strcmp(w.level, "PHYS") == 0);
+    if (stem) {
+        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+        u8g2_DrawUTF8(g, 150, 32, "闪卡记忆");
+        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+        int ww = u8g2_GetUTF8Width(g, w.en);
+        u8g2_DrawUTF8(g, (SCREEN_W - ww) / 2, 66, w.en);
+        u8g2_SetFont(g, u8g2_font_7x13_tf);
+        u8g2_DrawHLine(g, 10, 80, SCREEN_W - 20);
+        if (g_word_reveal) {
+            u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+            u8g2_DrawUTF8(g, 10, 102, "答案");
+            u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
+            draw_wrapped_utf8(w.zh, 10, 124, 380, 20, 2);
+            u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+            u8g2_DrawUTF8(g, 10, 178, "解释");
+            draw_wrapped_utf8(w.sentence_zh, 10, 198, 380, 16, 4);
+        } else {
+            u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+            u8g2_DrawUTF8(g, 10, 104, "问题");
+            draw_wrapped_utf8(w.sentence, 10, 128, 380, 20, 4);
+            u8g2_DrawUTF8(g, 130, 238, "按 A 显示答案");
+        }
+        u8g2_SetFont(g, u8g2_font_7x13_tf);
+        char ib[40];
+        snprintf(ib, sizeof(ib), "%s  %d / %d", w.level, g_word_idx + 1, word_level_count(g_word_level));
+        u8g2_DrawStr(g, 10, 270, ib);
+        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+        u8g2_DrawUTF8(g, 12, 292, "上下分类 左右换卡 A答案 SW返回");
+        return;
+    }
+    drawZhCentered(MENU_WORD, 40);
 
     char upper[32];
     size_t n = strlen(w.en);
@@ -4159,7 +4201,7 @@ static void drawWord() {
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     char idx[40];
-    snprintf(idx, sizeof(idx), "%s  %d / 100", w.level, g_word_idx + 1);
+    snprintf(idx, sizeof(idx), "%s  %d / %d", w.level, g_word_idx + 1, word_level_count(g_word_level));
     u8g2_DrawStr(g, 8, 270, idx);
 
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
@@ -4186,11 +4228,12 @@ static void word_audio_toggle() {
 
 static void handleWordInput() {
     if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
-    if (in.k4 && !prevIn.k4) word_audio_toggle();
-    if (in.up && !prevIn.up) { g_word_level = 0; g_word_idx = 0; g_word_reveal = false; }
-    if (in.down && !prevIn.down) { g_word_level = 1; g_word_idx = 0; g_word_reveal = false; }
+    if (in.k4 && !prevIn.k4 && g_word_level < 2) word_audio_toggle();
+    if (in.up && !prevIn.up) { g_word_level = (g_word_level + 3) % 4; g_word_idx = 0; g_word_reveal = false; }
+    if (in.down && !prevIn.down) { g_word_level = (g_word_level + 1) % 4; g_word_idx = 0; g_word_reveal = false; }
     if ((in.x < 0 && prevIn.x >= 0) || (in.x > 0 && prevIn.x <= 0)) {
-        g_word_idx = (g_word_idx + (in.x > 0 ? 1 : 99)) % 100;
+        int cnt = word_level_count(g_word_level);
+        g_word_idx = (g_word_idx + (in.x > 0 ? 1 : cnt - 1)) % cnt;
         g_word_reveal = false;
     }
     prevIn = in;
@@ -7756,12 +7799,16 @@ static void gameTask(void *arg) {
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
             drawWordMenu();
+            g_no_invert = false;
+            g_dark_ui = false;
             presentFrame();
         } else if (g_mode == MODE_WORD) {
             handleWordInput();
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
             drawWord();
+            g_no_invert = false;
+            g_dark_ui = false;
             presentFrame();
         } else if (g_mode == MODE_VOICE) {
             if (updateBackChord(realDt)) {
