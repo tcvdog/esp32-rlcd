@@ -98,7 +98,7 @@ struct Fighter {
     int facing = 1;
     float airY = 0;
     float vy = 0;
-    int state = 0; // 0 idle,1 walk,2 jump,3 jab,4 kick,5 guard,6 ink,7 hook,8 high kick,9 hurt,10 sweep,11 knee,12 dash,13 air kick,14 roll
+    int state = 0; // 0 idle,1 walk,2 jump,3 jab,4 kick,5 guard,6 ink,7 hook,8 high kick,9 hurt,10 sweep,11 knee,12 dash,13 air kick,14 roll,15 counter,16 grab,17 throw,18 ink burst,19 shadow rush,20 ink dragon,21 thrown
     float t = 0;
     float walkPhase = 0;
     float flash = 0;
@@ -1028,6 +1028,16 @@ static Pose poseFor(const Fighter &f) {
         p.thB = 118; p.shB = 136;
         p.dx = -4 + 12 * k;
         p.dy = 4 * (1 - k);
+    } else if (f.state == 21) { // victim being thrown
+        float k = clampf(f.t / 0.55f, 0.0f, 1.0f);
+        p.torso = -100;
+        p.head = -100;
+        p.uaF = 150; p.faF = 110;
+        p.uaB = 35;  p.faB = 20;
+        p.thF = 20; p.shF = 40;
+        p.thB = 48; p.shB = 60;
+        p.rot = f.facing * 300.0f * k;
+        p.dx = -f.facing * 8.0f * k;
     } else if (f.state == 9) { // hit stun
         p.torso = -101;
         p.head = -94;
@@ -1073,7 +1083,7 @@ static void drawFighter(const Fighter &f, const Pose &p, bool isDummy) {
     Point ftF = worldPoint(f, s.ftF, pelvisY), ftB = worldPoint(f, s.ftB, pelvisY);
 
     // Heavy/ink speed streaks behind the fighter.
-    if (f.state == 6 || f.state == 7 || f.state == 8 || f.state == 10 || f.state == 11 || f.state == 12 || f.state == 13 || f.state == 14 || f.state == 16 || f.state == 18 || f.state == 19 || f.state == 20) {
+    if (f.state == 6 || f.state == 7 || f.state == 8 || f.state == 10 || f.state == 11 || f.state == 12 || f.state == 13 || f.state == 14 || f.state == 16 || f.state == 18 || f.state == 19 || f.state == 20 || f.state == 21) {
         int dir = -f.facing;
         for (int i = 0; i < 3; ++i) {
             int y = (int)neck.y - 6 + i * 13;
@@ -1292,6 +1302,9 @@ static void updateFighter(Fighter &f, float dt, bool isDummy) {
             break;
         case 20: // ultimate
             if (f.t > 1.20f) { f.state = 0; f.t = 0; }
+            break;
+        case 21: // thrown victim
+            if (f.t > 0.55f || (f.airY <= 0.01f && f.t > 0.25f)) { f.state = 0; f.t = 0; }
             break;
         default:
             break;
@@ -1733,7 +1746,7 @@ static void playSfx(int kind) {
 
 // Generic hit resolution, used by both the player and the AI.
 static void tryHit(Fighter &att, Fighter &def) {
-    if (ko || att.hitDone || def.state == 9 || def.state == 14) return;
+    if (ko || att.hitDone || def.state == 9 || def.state == 14 || def.state == 21) return;
     if (def.state == 12 && def.dashDir == -def.facing && def.t < 0.16f) return; // backdash i-frames
 
     float active = 0, reach = 0, damage = 0;
@@ -1805,6 +1818,12 @@ static void tryHit(Fighter &att, Fighter &def) {
     def.state = 9;
     def.t = 0;
     def.x = clampf(def.x + dir * 9, 45, 355);
+    if (grabMove) {
+        def.state = 21;
+        def.t = 0;
+        def.vy = 250.0f;
+        def.airY = 1.0f;
+    }
     if (att.state == 11 || att.state == 20 || att.state == 18) {
         def.vy = att.state == 20 ? 380.0f : 180.0f;
         def.airY = 1.0f;
