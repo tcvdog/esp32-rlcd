@@ -98,7 +98,7 @@ struct Fighter {
     int facing = 1;
     float airY = 0;
     float vy = 0;
-    int state = 0; // 0 idle,1 walk,2 jump,3 jab,4 kick,5 guard,6 ink,7 hook,8 high kick,9 hurt,10 sweep,11 knee,12 dash,13 air kick,14 roll,15 counter,16 grab,17 throw,18 ink burst,19 shadow rush,20 ink dragon,21 thrown
+    int state = 0; // 0 idle,1 walk,2 jump,3 jab,4 kick,5 guard,6 ink,7 hook,8 high kick,9 hurt,10 sweep,11 knee,12 dash,13 air kick,14 roll,15 counter,16 grab,17 throw,18 ink burst,19 shadow rush,20 ink dragon,21 thrown,22 run,23 cross
     float t = 0;
     float walkPhase = 0;
     float flash = 0;
@@ -116,6 +116,7 @@ struct Fighter {
     bool prevK4 = false;
     int hitCount = 0;
     float nextHit = 0.0f;
+    float moveHold = 0.0f;
 };
 
 struct Input {
@@ -138,6 +139,8 @@ static Fighter p1, dummy;
 static Input in, prevIn;
 static bool ko = false;
 static bool g_debug_hold = false;
+static char g_impact_text[16] = "";
+static float g_impact_t = 0.0f;
 static int winner = 0;
 static float aiTimer = 0.8f;
 static float aiInkCooldown = 2.0f;
@@ -1028,6 +1031,33 @@ static Pose poseFor(const Fighter &f) {
         p.thB = 118; p.shB = 136;
         p.dx = -4 + 12 * k;
         p.dy = 4 * (1 - k);
+    } else if (f.state == 22) { // run
+        float s = sinf(f.walkPhase);
+        p.torso = -94;
+        p.head = -92;
+        p.uaF = 112 - s * 20; p.faF = 20;
+        p.uaB = 48 + s * 24; p.faB = -20;
+        p.thF = 55 + s * 28; p.shF = 105 - s * 18;
+        p.thB = 100 - s * 28; p.shB = 128 + s * 14;
+        p.dx = 4;
+    } else if (f.state == 23) { // second punch / cross
+        if (t < 0.10f) {
+            float k = ease(t / 0.10f);
+            p.torso = lerpf(-84, -98, k);
+            p.uaB = lerpf(118, 125, k); p.faB = lerpf(-30, 55, k);
+            p.dx = lerpf(0, -3, k);
+        } else if (t < 0.20f) {
+            float k = ease((t - 0.10f) / 0.10f);
+            p.torso = lerpf(-98, -74, k);
+            p.uaB = lerpf(125, 2, k); p.faB = lerpf(55, -2, k);
+            p.uaF = lerpf(50, 100, k); p.faF = lerpf(-92, -60, k);
+            p.dx = lerpf(-3, 10, k);
+        } else {
+            float k = ease((t - 0.20f) / 0.20f);
+            p.torso = lerpf(-74, -84, k);
+            p.uaB = lerpf(2, 118, k); p.faB = lerpf(-2, -30, k);
+            p.dx = lerpf(10, 0, k);
+        }
     } else if (f.state == 21) { // victim being thrown
         float k = clampf(f.t / 0.55f, 0.0f, 1.0f);
         p.torso = -100;
@@ -1083,7 +1113,7 @@ static void drawFighter(const Fighter &f, const Pose &p, bool isDummy) {
     Point ftF = worldPoint(f, s.ftF, pelvisY), ftB = worldPoint(f, s.ftB, pelvisY);
 
     // Heavy/ink speed streaks behind the fighter.
-    if (f.state == 6 || f.state == 7 || f.state == 8 || f.state == 10 || f.state == 11 || f.state == 12 || f.state == 13 || f.state == 14 || f.state == 16 || f.state == 18 || f.state == 19 || f.state == 20 || f.state == 21) {
+    if (f.state == 6 || f.state == 7 || f.state == 8 || f.state == 10 || f.state == 11 || f.state == 12 || f.state == 13 || f.state == 14 || f.state == 16 || f.state == 18 || f.state == 19 || f.state == 20 || f.state == 21 || f.state == 22 || f.state == 23) {
         int dir = -f.facing;
         for (int i = 0; i < 3; ++i) {
             int y = (int)neck.y - 6 + i * 13;
@@ -1306,15 +1336,21 @@ static void updateFighter(Fighter &f, float dt, bool isDummy) {
         case 21: // thrown victim
             if (f.t > 0.55f || (f.airY <= 0.01f && f.t > 0.25f)) { f.state = 0; f.t = 0; }
             break;
+        case 22: // run
+            if (in.x == 0 || p1.facing != (in.x > 0 ? 1 : -1)) { f.state = 0; f.t = 0; }
+            break;
+        case 23: // cross
+            if (f.t > 0.40f) { f.state = 0; f.t = 0; }
+            break;
         default:
             break;
     }
 }
 
 static void startAttack(Fighter &f, int state) {
-    bool chain = (state == 7 && f.state == 3 && f.t > 0.12f && f.t < 0.36f) ||
-                 (state == 8 && f.state == 7 && f.t > 0.18f && f.t < 0.52f);
-    if (f.state == 0 || f.state == 1 || chain) {
+    bool chain = (state == 23 && f.state == 3 && f.t > 0.10f && f.t < 0.36f) ||
+                 (state == 8 && f.state == 23 && f.t > 0.12f && f.t < 0.38f);
+    if (f.state == 0 || f.state == 1 || f.state == 22 || chain) {
         f.state = state;
         f.t = 0;
         f.hitDone = false;
@@ -1369,6 +1405,7 @@ static bool startRush(Fighter &f) {
 static bool startUltimate(Fighter &f) {
     if (f.gas < 3) { f.flash = 0.12f; return false; }
     f.gas -= 3; f.state = 20; f.t = 0; f.hitDone = false;
+    f.hitCount = 0; f.nextHit = 0.28f;
     f.airY = 0; f.vy = 0;
     return true;
 }
@@ -1481,9 +1518,10 @@ static void handleInput(float dt) {
         startCounter(p1);                                  // guard + A: counter
     } else if (!p1.guardHold) {
         if (aEdge) {
-            if (p1.state == 3 && p1.t > 0.12f && p1.t < 0.36f) startAttack(p1, 7);
-            else if (p1.state == 7 && p1.t > 0.18f && p1.t < 0.52f) startAttack(p1, 8);
+            if (p1.state == 3 && p1.t > 0.10f && p1.t < 0.36f) startAttack(p1, 23);
+            else if (p1.state == 23 && p1.t > 0.12f && p1.t < 0.38f) startAttack(p1, 8);
             else startAttack(p1, 3);                  // A: jab
+
         }
         if (bEdge) {
             if (in.down && back) startRoll(p1);           // ↓+back+B: roll
@@ -1519,15 +1557,19 @@ static void handleInput(float dt) {
     }
 
     // --- movement: forward/back walk; back becomes guard only on incoming attack ---
-    const bool canMove = (p1.state == 0 || p1.state == 1) && p1.airY <= 0.01f;
+    const bool canMove = (p1.state == 0 || p1.state == 1 || p1.state == 22) && p1.airY <= 0.01f;
     if (canMove && !p1.guardHold) {
         if (in.x != 0) {
-            p1.x = clampf(p1.x + in.x * 78.0f * dt, 45, 355);
-            p1.state = 1;
-            p1.walkPhase += dt * 9.0f;
-        } else if (p1.state == 1) {
-            p1.state = 0;
-            p1.t = 0;
+            if (p1.state == 1) p1.moveHold += dt; else p1.moveHold = 0;
+            if (p1.state == 1 && p1.moveHold > 0.28f && in.x == p1.facing) {
+                p1.state = 22; p1.t = 0;
+            }
+            float spd = (p1.state == 22) ? 135.0f : 78.0f;
+            p1.x = clampf(p1.x + in.x * spd * dt, 45, 355);
+            if (p1.state != 22) p1.state = 1;
+            p1.walkPhase += dt * (p1.state == 22 ? 16.0f : 9.0f);
+        } else if (p1.state == 1 || p1.state == 22) {
+            p1.state = 0; p1.t = 0; p1.moveHold = 0;
         }
     }
 
@@ -1554,7 +1596,7 @@ static void handleInput(float dt) {
     }
 
     // Auto-face when free to turn; attacks/ink/hurt lock facing.
-    if (p1.state == 0 || p1.state == 1 || p1.state == 5) {
+    if (p1.state == 0 || p1.state == 1 || p1.state == 22 || p1.state == 5) {
         p1.facing = dummy.x >= p1.x ? 1 : -1;
     }
 
@@ -1746,7 +1788,8 @@ static void playSfx(int kind) {
 
 // Generic hit resolution, used by both the player and the AI.
 static void tryHit(Fighter &att, Fighter &def) {
-    if (ko || att.hitDone || def.state == 9 || def.state == 14 || def.state == 21) return;
+    if (ko || att.hitDone || def.state == 14 || def.state == 21) return;
+    if (def.state == 9 && att.state != 19 && att.state != 20) return;
     if (def.state == 12 && def.dashDir == -def.facing && def.t < 0.16f) return; // backdash i-frames
 
     float active = 0, reach = 0, damage = 0;
@@ -1762,7 +1805,7 @@ static void tryHit(Fighter &att, Fighter &def) {
         case 16: active = 0.10f; reach = 62; damage = 24; break; // grab
         case 18: active = 0.16f; reach = 110; damage = 30; break; // ink burst
         case 19: active = 0.12f; reach = 92; damage = 16; break; // shadow rush
-        case 20: active = 0.28f; reach = 170; damage = 60; break; // ultimate
+        case 20: active = 0.28f; reach = 170; damage = 25; break; // ultimate
         default: return;
     }
     if (def.state == 15 && att.t < 0.26f && fabsf(def.x - att.x) < 110.0f) {
@@ -1774,7 +1817,7 @@ static void tryHit(Fighter &att, Fighter &def) {
         playSfx(2);
         return;
     }
-    if (att.state == 19) {
+    if (att.state == 19 || att.state == 20) {
         if (att.t < att.nextHit || att.hitCount >= 3) return;
     } else if (att.t < active) return;
     float dx = def.x - att.x;
@@ -1783,9 +1826,9 @@ static void tryHit(Fighter &att, Fighter &def) {
 
     bool grabMove = (att.state == 16);
     att.hitDone = true;
-    if (att.state == 19) {
+    if (att.state == 19 || att.state == 20) {
         att.hitCount++;
-        att.nextHit += 0.13f;
+        att.nextHit += (att.state == 20 ? 0.18f : 0.13f);
         if (att.hitCount < 3) att.hitDone = false;
     } else if (att.state == 16) {
         att.state = 17; att.t = 0;
@@ -1813,6 +1856,12 @@ static void tryHit(Fighter &att, Fighter &def) {
     int fxKind = (att.state == 6 || att.state == 20) ? 3 : (att.state == 11 || att.state == 18) ? 4 : ((att.state == 7 || att.state == 8 || att.state == 10 || att.state == 16 || att.state == 19) ? 2 : 1);
     playSfx(fxKind);
     spawnHitFx((att.x + def.x) * 0.5f, GROUND - 82.0f, fxKind);
+    if (att.state == 20) snprintf(g_impact_text, sizeof(g_impact_text), "INK DRAGON");
+    else if (att.state == 19) snprintf(g_impact_text, sizeof(g_impact_text), "SLASH!");
+    else if (att.state == 18) snprintf(g_impact_text, sizeof(g_impact_text), "BURST!");
+    else if (att.state == 6) snprintf(g_impact_text, sizeof(g_impact_text), "KA-POW!");
+    else snprintf(g_impact_text, sizeof(g_impact_text), "HIT!");
+    g_impact_t = 0.28f;
     def.hp = def.hp > damage ? def.hp - damage : 0;
     def.flash = 0.20f;
     def.state = 9;
@@ -1876,7 +1925,8 @@ static void updateAI(float dt) {
     int r = (int)(esp_random() % 100);
     bool p1Attacking = (p1.state == 3 || p1.state == 4 ||
                         p1.state == 6 || p1.state == 7 ||
-                        p1.state == 8 || p1.state == 10 || p1.state == 11);
+                        p1.state == 8 || p1.state == 10 || p1.state == 11 ||
+                        p1.state == 19 || p1.state == 20);
 
     // React to an incoming attack with a short guard.
     if (p1Attacking && dist < 95 && r < 35) {
@@ -2097,6 +2147,13 @@ static void drawSpecialFx(const Fighter &f) {
     }
 }
 
+static void drawImpactText() {
+    if (g_impact_t <= 0.0f || !g_impact_text[0]) return;
+    u8g2_SetFont(g, u8g2_font_10x20_tf);
+    int w = u8g2_GetStrWidth(g, g_impact_text);
+    u8g2_DrawStr(g, (SCREEN_W - w) / 2, 112, g_impact_text);
+}
+
 static void drawHud() {
     char txt[32];
 
@@ -2140,7 +2197,7 @@ static void drawHud() {
     }
 
     // Bottom control hints, 1.5x.
-    u8g2_DrawStr(g, 8, 254, "A JAB>HOOK>HIGH   B KICK   AIR+B AIRKICK");
+    u8g2_DrawStr(g, 8, 254, "A JAB>CROSS>HIGH   B KICK   AIR+B AIRKICK");
     u8g2_DrawStr(g, 8, 270, "GUARD+A CTR  D+BACK+B ROLL  CLOSE+C GRAB");
     u8g2_DrawStr(g, 8, 286, "QCF INK  D+BACK C BURST  DASH+C RUSH  C+D ULT");
 }
@@ -8428,6 +8485,7 @@ static void gameTask(void *arg) {
                 drawSpecialFx(dummy);
 
                 drawHitFx();
+                drawImpactText();
 
                 if (ko) {
                     u8g2_SetBitmapMode(g, 1);
