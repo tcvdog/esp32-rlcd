@@ -49,7 +49,8 @@ void update(int group, int idx, int level, int page, int seen, int reveals, int 
     ensure();
     if (group < 0 || group >= 8 || idx < 0 || idx >= 64) return;
     ClozeProgressItem &q = p[group][idx];
-    q.level = (uint8_t)level;
+    // Levels are monotonic: a stale/older caller must never lower progress.
+    if (level > q.level) q.level = (uint8_t)level;
     q.page = (uint8_t)page;
     q.seen = (uint16_t)seen;
     q.reveals = (uint8_t)reveals;
