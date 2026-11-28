@@ -68,6 +68,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "cloze_stats.h"
 #include "cloze_content.h"
 #include "cloze_text.h"
+#include "cloze_font24.h"
 
 #include "ink_effect_frames.h"
 
@@ -539,6 +540,7 @@ static int g_cloze_list_sel = 0;
 static bool g_cloze_active = false;
 static int g_cloze_stat_level = -1;
 static int g_cloze_stat_page = -1;
+static bool g_cloze_large = false;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
@@ -4581,7 +4583,7 @@ static int poem_page_count(const char *text, int maxw, int maxLines) {
     for (const char *p = text; *p; ) {
         if (*p == '\n') { ++lines; chars = 0; ++p; continue; }
         int b = utf8_len((unsigned char)*p);
-        if (chars >= 18) { ++lines; chars = 0; }
+        if (chars >= (g_cloze_large ? 15 : 18)) { ++lines; chars = 0; }
         ++chars;
         p += b;
     }
@@ -4589,11 +4591,13 @@ static int poem_page_count(const char *text, int maxw, int maxLines) {
 }
 
 static const ClozeGlyph *cloze_glyph(uint32_t cp) {
-    int lo = 0, hi = CLOZE_GLYPH_COUNT - 1;
+    const ClozeGlyph *tbl = g_cloze_large ? CLOZE24_GLYPHS : CLOZE_GLYPHS;
+    int total = g_cloze_large ? CLOZE24_GLYPH_COUNT : CLOZE_GLYPH_COUNT;
+    int lo = 0, hi = total - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        if (CLOZE_GLYPHS[mid].cp == cp) return &CLOZE_GLYPHS[mid];
-        if (CLOZE_GLYPHS[mid].cp < cp) lo = mid + 1; else hi = mid - 1;
+        if (tbl[mid].cp == cp) return &tbl[mid];
+        if (tbl[mid].cp < cp) lo = mid + 1; else hi = mid - 1;
     }
     return nullptr;
 }
@@ -4617,7 +4621,8 @@ static void cloze_glyph_draw(int x, int yTop, uint32_t cp) {
     if (!g) return;
     u8g2_SetBitmapMode(ui::g(), 1);
     u8g2_SetDrawColor(ui::g(), 1);
-    u8g2_DrawXBMP(ui::g(), x, yTop + g->yoff, g->w, g->h, CLOZE_GLYPH_BITS + g->off);
+    const uint8_t *bits = g_cloze_large ? CLOZE24_GLYPH_BITS : CLOZE_GLYPH_BITS;
+    u8g2_DrawXBMP(ui::g(), x, yTop + g->yoff, g->w, g->h, bits + g->off);
     u8g2_SetBitmapMode(ui::g(), 0);
 }
 
@@ -4629,7 +4634,7 @@ static void draw_cloze_page(const char *text, int page, int x, int y, int lineh,
     while (*p && line < (page + 1) * maxLines) {
         const char *start = p;
         int chars = 0;
-        while (*p && *p != '\n' && chars < 18) {
+        while (*p && *p != '\n' && chars < (g_cloze_large ? 15 : 18)) {
             int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
         }
         if (line >= page * maxLines) {
@@ -4656,7 +4661,7 @@ static void draw_cloze_overlay(const char *text, const char *mask, int page,
     while (*p && line < (page + 1) * maxLines) {
         const char *start = p;
         int chars = 0;
-        while (*p && *p != '\n' && chars < 18) {
+        while (*p && *p != '\n' && chars < (g_cloze_large ? 15 : 18)) {
             int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
         }
         if (line >= page * maxLines) {
@@ -4748,15 +4753,21 @@ static void drawClozeTextCard(const ClozeText &t) {
     int ax = 14 + ui::textWidth16(t.title) + 10;
     if (ax > 190) ax = 190;
     ui::label12(ax, 52, t.author);
-    int pages = poem_page_count(t.original, 374, 7);
+    bool poetry = (g_cloze_group == 1 || g_cloze_group == 3 || g_cloze_group == 5);
+    g_cloze_large = poetry;
+    int maxLines = poetry ? 5 : 7;
+    int lineh = poetry ? 36 : 24;
+    int by = poetry ? 84 : 72;
+    int pages = poem_page_count(t.original, 374, maxLines);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
+    if (poetry && pages == 1) by += 16;
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 52, b);
     u8g2_DrawHLine(g, 12, 62, 376);
     const char *mask = g_word_reveal ? nullptr : t.levels[g_cloze_level - 1];
-    draw_cloze_overlay(t.original, mask, g_cloze_page, 14, 72, 24, 7);
+    draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
     snprintf(hint, sizeof(hint), "换篇 / 调级 / 翻页   %s",
