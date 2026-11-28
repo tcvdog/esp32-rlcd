@@ -4647,8 +4647,10 @@ static void drawChushi() {
     u8g2_DrawHLine(g, 12, 80, 376);
     const char *body = g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1];
     draw_cloze_page(body, g_cloze_page, 14, 88, 24, 374, 6);
-    ui::label12(14, 236, g_word_reveal ? "原文 · K3 返回镂空" : "镂空遮挡 · K3 显示原文");
-    ui::label12(14, 262, "换篇 / 调级 / 翻页");
+    char hint[96];
+    snprintf(hint, sizeof(hint), "%s   换篇 / 调级 / 翻页",
+             g_word_reveal ? "原文 K3 返回镂空" : "镂空遮挡 K3 显示原文");
+    ui::label12(14, 264, hint);
 }
 
 static void drawWord() {
