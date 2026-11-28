@@ -4,10 +4,10 @@ import re, sys, json
 from pathlib import Path
 
 text = Path('game_proto/main/cloze_text.h').read_text()
-pat = re.compile(r'\{"([^"]*)",\s*"([^"]*)",\s*"((?:\\.|[^"])*)",\s*(\d+),\s*(\d+),\s*\{\s*(.*?)\n\s*\}\}', re.S)
+pat = re.compile(r'\{"([^"]*)",\s*"([^"]*)",\s*"([^"]*)",\s*"((?:\\.|[^"])*)",\s*(\d+),\s*(\d+),\s*\{\s*(.*?)\n\s*\}\}', re.S)
 entries=[]
 for m in pat.finditer(text):
-    title,author,orig,poetry,alt,body=m.groups()
+    title,dynasty,author,orig,poetry,alt,body=m.groups()
     try: orig=json.loads('"'+orig+'"')
     except Exception: pass
     lv=[]

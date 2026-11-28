@@ -3,7 +3,7 @@ import json, glob, re, sys, random
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from textbook_catalog import PRIMARY_LOW, PRIMARY_HIGH, PRIMARY_PROSE, MIDDLE_POEMS, MIDDLE_PROSE, HIGH_PROSE, HIGH_POEMS
-from alt_texts import ALT, ALT_AUTHOR
+from alt_texts import ALT, ALT_AUTHOR, ALT_DYN
 
 # Current verified/full texts, so existing curated texts win over dataset variants.
 def parse_current():
@@ -14,6 +14,9 @@ def parse_current():
         except Exception: continue
         out[m.group(1)]=txt
     return out
+FIX_DYN={"咏柳":"唐","登鹳雀楼":"唐","春晓":"唐","池上":"唐","山行":"唐","绝句":"唐","忆江南":"唐"}
+CUR_DYN={"司马光":"宋","守株待兔":"先秦"}
+
 FIX={
 "咏柳":("贺知章","碧玉妆成一树高，万条垂下绿丝绦。不知细叶谁裁出，二月春风似剪刀。"),
 "登鹳雀楼":("王之涣","白日依山尽，黄河入海流。欲穷千里目，更上一层楼。"),
@@ -59,15 +62,15 @@ ALIAS={
  '答司马谏议书':None,'子路、曾皙、冉有、公西华侍坐':None,'礼运（节选）':None,'长亭送别（节选）':None,
 }
 def find(title):
-    if title in FIX: return FIX[title][1], FIX[title][0], False
-    if title in ALT: return ALT[title], '—', True
-    if title in CUR: return CUR[title], '—', False
-    if title in D: return D[title]['content'], D[title].get('writer',''), False
+    if title in FIX: return FIX[title][1], FIX[title][0], False, FIX_DYN.get(title,'—')
+    if title in ALT: return ALT[title], '—', True, ALT_DYN.get(title,'—')
+    if title in CUR: return CUR[title], '—', False, CUR_DYN.get(title,'—')
+    if title in D: return D[title]['content'], D[title].get('writer',''), False, D[title].get('dynasty','—')
     a=ALIAS.get(title)
-    if a and a in D: return D[a]['content'], D[a].get('writer',''), False
+    if a and a in D: return D[a]['content'], D[a].get('writer',''), False, D[a].get('dynasty','—')
     if norm(title) in DN:
-        d=DN[norm(title)]; return d['content'], d.get('writer',''), False
-    return '', '', False
+        d=DN[norm(title)]; return d['content'], d.get('writer',''), False, d.get('dynasty','—')
+    return '', '', False, '—'
 
 STOP=set('的了和在有把被并且于以之为其而则也矣焉哉乎兮所与因若虽然故乃遂')
 PUNCT=set('，。；：！？、\n “”《》')
@@ -129,18 +132,18 @@ card_names=['CLOZE_LOW_CARDS','CLOZE_MIDHIGH_CARDS','CLOZE_MIDDLE_CARDS','CLOZE_
 text_names=['CLOZE_LOW','CLOZE_MIDHIGH','CLOZE_MIDDLE','CLOZE_HIGH']
 cards_hdr='''#pragma once
 #include <stdint.h>
-struct PoemCard { const char *title; const char *author; const char *lines[4]; const char *note; uint8_t mask; };
+struct PoemCard { const char *title; const char *dynasty; const char *author; const char *lines[4]; const char *note; uint8_t mask; };
 '''
 texts_hdr='''#pragma once
 #include <stdint.h>
-struct ClozeText { const char *title; const char *author; const char *original; uint8_t poetry; uint8_t alt; const char *levels[5]; };
+struct ClozeText { const char *title; const char *dynasty; const char *author; const char *original; uint8_t poetry; uint8_t alt; const char *levels[5]; };
 '''
 counts=[]; missing=[]; matched=0
 for si,(stage,items) in enumerate(STAGES):
     cards=[]; texts=[]; cnt=0
     for typ,title in items:
         print(f'[{si}] {title}', flush=True)
-        orig,author,is_alt=find(title)
+        orig,author,is_alt,dynasty=find(title)
         if not author or author == '—': author = ALT_AUTHOR.get(title, '—')
         poetry = 1 if typ!='文言文' else 0
         if not orig:
@@ -151,16 +154,16 @@ for si,(stage,items) in enumerate(STAGES):
             if poetry and not any(ch in orig for ch in '，。！？；：'):
                 pass
         lv=masks(orig) if orig else ['','','','','']
-        cards.append({'title':title,'author':author or '—','poetry':poetry})
-        texts.append({'title':title,'author':author or '—','orig':orig,'poetry':poetry,'alt':1 if is_alt else 0,'levels':lv})
+        cards.append({'title':title,'dynasty':dynasty or '—','author':author or '—','poetry':poetry})
+        texts.append({'title':title,'dynasty':dynasty or '—','author':author or '—','orig':orig,'poetry':poetry,'alt':1 if is_alt else 0,'levels':lv})
         cnt+=1
     cards_hdr += f'static const PoemCard {card_names[si]}[] = {{\n'
     for c in cards:
-        cards_hdr += '    {'+json.dumps(c['title'],ensure_ascii=False)+', '+json.dumps(c['author'],ensure_ascii=False)+', {"","","",""}, "", 2},\n'
+        cards_hdr += '    {'+json.dumps(c['title'],ensure_ascii=False)+', '+json.dumps(c['dynasty'],ensure_ascii=False)+', '+json.dumps(c['author'],ensure_ascii=False)+', {"","","",""}, "", 2},\n'
     cards_hdr += '};\n\n'
     texts_hdr += f'static const ClozeText {text_names[si]}[] = {{\n'
     for t in texts:
-        texts_hdr += '    {'+json.dumps(t['title'],ensure_ascii=False)+', '+json.dumps(t['author'],ensure_ascii=False)+', '+json.dumps(t['orig'],ensure_ascii=False)+f", {t['poetry']}, {t['alt']}, {{\n"
+        texts_hdr += '    {'+json.dumps(t['title'],ensure_ascii=False)+', '+json.dumps(t['dynasty'],ensure_ascii=False)+', '+json.dumps(t['author'],ensure_ascii=False)+', '+json.dumps(t['orig'],ensure_ascii=False)+f", {t['poetry']}, {t['alt']}, {{\n"
         texts_hdr += '        '+',\n        '.join(json.dumps(x,ensure_ascii=False) for x in t['levels'])+'\n    }},\n'
     texts_hdr += '};\n\n'
     counts.append((stage,cnt))

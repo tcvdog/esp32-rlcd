@@ -4832,14 +4832,16 @@ static const char *cloze_random_mask(const ClozeText &t, int page) {
 static void drawClozeTextCard(const ClozeText &t) {
     ui::setInk(ui::Ink::Black);
     ui::panel(6, 32, 388, 218);
+    char au[64];
+    snprintf(au, sizeof(au), "%s · %s", t.dynasty ? t.dynasty : "", t.author ? t.author : "");
     if (strlen(t.title) > 18) {
         ui::label12(14, 52, t.title);
-        ui::label12(214, 52, t.author);
+        ui::label12(214, 52, au);
     } else {
         ui::label16(14, 52, t.title);
         int ax = 14 + ui::textWidth16(t.title) + 10;
         if (ax > 190) ax = 190;
-        ui::label12(ax, 52, t.author);
+        ui::label12(ax, 52, au);
     }
     bool poetry = t.poetry != 0;
     g_cloze_large = poetry;
@@ -4849,7 +4851,8 @@ static void drawClozeTextCard(const ClozeText &t) {
     if (!t.original || !*t.original) {
         ui::panel(6,32,388,218);
         ui::label16(14,56,t.title);
-        ui::label12(14,78,t.author);
+        char au[64]; snprintf(au,sizeof(au),"%s · %s",t.dynasty?t.dynasty:"",t.author?t.author:"");
+        ui::label12(14,78,au);
         ui::label16(14,126,"全文待补");
         ui::label12(14,152,"目录已收录，正文尚未校验录入");
         return;
@@ -4884,7 +4887,8 @@ static void drawClozeTextCard(const ClozeText &t) {
 static void drawChushi() {
     static ClozeText t;
     t.title = "出师表";
-    t.author = "三国 · 诸葛亮";
+    t.dynasty = "三国";
+    t.author = "诸葛亮";
     t.original = CHUSHI_ORIGINAL;
     for (int i = 0; i < 5; ++i) t.levels[i] = CHUSHI_LEVELS[i];
     drawClozeTextCard(t);
