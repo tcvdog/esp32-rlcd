@@ -68,6 +68,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "cloze_stats.h"
 #include "cloze_progress.h"
 #include "cloze_content.h"
+#include "cloze_order.h"
 #include "cloze_text.h"
 #include "cloze_font24.h"
 
@@ -4784,10 +4785,15 @@ static const ClozeText *cloze_text_for(int group, int idx) {
 static void drawClozeTextCard(const ClozeText &t) {
     ui::setInk(ui::Ink::Black);
     ui::panel(6, 32, 388, 218);
-    ui::label16(14, 52, t.title);
-    int ax = 14 + ui::textWidth16(t.title) + 10;
-    if (ax > 190) ax = 190;
-    ui::label12(ax, 52, t.author);
+    if (strlen(t.title) > 18) {
+        ui::label12(14, 52, t.title);
+        ui::label12(214, 52, t.author);
+    } else {
+        ui::label16(14, 52, t.title);
+        int ax = 14 + ui::textWidth16(t.title) + 10;
+        if (ax > 190) ax = 190;
+        ui::label12(ax, 52, t.author);
+    }
     bool poetry = (g_cloze_group == 1 || g_cloze_group == 3 || g_cloze_group == 5);
     g_cloze_large = poetry;
     int maxLines = poetry ? 5 : 7;
@@ -4821,6 +4827,17 @@ static void drawChushi() {
     t.original = CHUSHI_ORIGINAL;
     for (int i = 0; i < 5; ++i) t.levels[i] = CHUSHI_LEVELS[i];
     drawClozeTextCard(t);
+}
+
+static int cloze_order(int group, int pos) {
+    if (group <= 0 || group > 6 || pos < 0 || pos >= 8) return pos;
+    return CLOZE_ORDER[group - 1][pos];
+}
+
+static int cloze_pos(int group, int src) {
+    if (group <= 0 || group > 6) return src;
+    for (int i = 0; i < 8; ++i) if (CLOZE_ORDER[group - 1][i] == src) return i;
+    return src;
 }
 
 static int cloze_group_count(int group) {
@@ -4862,8 +4879,8 @@ static void cloze_append(const char *event) {
 static void cloze_enter_card(int group, int idx) {
     g_cloze_group = group;
     g_cloze_idx = idx;
-    g_cloze_list_sel = idx;
-    g_cloze_list_page = idx / 6;
+    g_cloze_list_sel = cloze_pos(group, idx);
+    g_cloze_list_page = g_cloze_list_sel / 6;
     g_word_level = 4;
     g_word_reveal = false;
     g_cloze_page = 0;
@@ -4891,9 +4908,11 @@ static void cloze_switch(int delta) {
     if (cnt <= 1) return;
     cloze_stats::exitSession();
     cloze_append("exit");
-    g_cloze_idx = (g_cloze_idx + cnt + delta) % cnt;
-    g_cloze_list_sel = g_cloze_idx;
-    g_cloze_list_page = g_cloze_idx / 6;
+    int pos = (cloze_pos(g_cloze_group, g_cloze_idx) + cnt + delta) % cnt;
+    g_cloze_idx = cloze_order(g_cloze_group, pos);
+    if (g_cloze_idx < 0) g_cloze_idx = 0;
+    g_cloze_list_sel = pos;
+    g_cloze_list_page = pos / 6;
     g_cloze_page = 0;
     g_word_reveal = false;
     g_cloze_stat_level = -1;
@@ -4983,8 +5002,9 @@ static void drawClozeList() {
     for (int row = 0; row < 6; ++row) {
         int i = first + row;
         if (i >= count) break;
+        int src = cloze_order(group, i);
         int y = 60 + row * 24;
-        const PoemCard *p = cloze_item(group, i);
+        const PoemCard *p = cloze_item(group, src);
         if (!p) continue;
         bool sel = (i == g_cloze_list_sel);
         ui::shadow(10, y, 380, 22);
@@ -5000,9 +5020,10 @@ static void drawClozeList() {
         }
         char n[16]; snprintf(n, sizeof(n), "%02d", i + 1);
         ui::mono(20, y + 16, n);
-        ui::label16(56, y + 18, p->title);
+        if (strlen(p->title) > 18) ui::label12(56, y + 17, p->title);
+        else ui::label16(56, y + 18, p->title);
         ui::label12(230, y + 16, p->author);
-        const ClozeProgressItem *pr = cloze_progress::get(group, i);
+        const ClozeProgressItem *pr = cloze_progress::get(group, src);
         if (pr && pr->opens)
             snprintf(b, sizeof(b), "x%u L%u", (unsigned)pr->opens, (unsigned)pr->level);
         else
@@ -5037,7 +5058,8 @@ static void handleClozeList() {
             ++g_cloze_list_page;
             g_cloze_list_sel = g_cloze_list_page * 6;
         }
-        if (in.k3 && !prevIn.k3) cloze_enter_card(g_cloze_group, g_cloze_list_sel);
+        if (in.k3 && !prevIn.k3)
+            cloze_enter_card(g_cloze_group, cloze_order(g_cloze_group, g_cloze_list_sel));
     }
     if (in.k4 && !prevIn.k4) g_mode = MODE_CLOZE_MENU;
     prevIn = in;
@@ -5183,8 +5205,8 @@ static void handleWordInput() {
         if (in.k2 && !prevIn.k2) cloze_switch(1);
         if (in.k4 && !prevIn.k4) {
             cloze_exit_card();
-            g_cloze_list_sel = g_cloze_idx;
-            g_cloze_list_page = g_cloze_idx / 6;
+            g_cloze_list_sel = cloze_pos(g_cloze_group, g_cloze_idx);
+            g_cloze_list_page = g_cloze_list_sel / 6;
             g_mode = (g_cloze_group == 0) ? MODE_CLOZE_MENU : MODE_CLOZE_LIST;
             g_word_reveal = false; g_cloze_page = 0;
         }
@@ -8614,8 +8636,8 @@ static void goBack() {
     if (g_mode == MODE_WORD) {
         if (g_word_level == 4) {
             cloze_exit_card();
-            g_cloze_list_sel = g_cloze_idx;
-            g_cloze_list_page = g_cloze_idx / 6;
+            g_cloze_list_sel = cloze_pos(g_cloze_group, g_cloze_idx);
+            g_cloze_list_page = g_cloze_list_sel / 6;
             g_mode = (g_cloze_group == 0) ? MODE_CLOZE_MENU : MODE_CLOZE_LIST;
             return;
         }
