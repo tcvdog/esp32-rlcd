@@ -3153,6 +3153,10 @@ static void uiDrawFrame() {
         uiBottomKey(300, "K4", "BACK");
     } else if (g_mode == MODE_CLOZE_STATS) {
         uiBottomKey(150, "K4", "BACK");
+    } else if (g_mode == MODE_WORD_MENU) {
+        uiBottomKey(6, "JOY", "MOVE");
+        uiBottomKey(150, "K3", "OPEN");
+        uiBottomKey(300, "K4", "BACK");
     } else if (g_mode == MODE_WORD) {
         if (g_word_level == 4) {
             uiBottomKey(4, "JOY", "LV/PG");
@@ -3164,7 +3168,7 @@ static void uiDrawFrame() {
             uiBottomKey(4, "JOY", "CARD");
             uiBottomKey(110, "K3", "FLIP");
             if (g_word_level < 2) uiBottomKey(210, "K2", "AUDIO");
-            uiBottomKey(318, "SW", "BACK");
+            uiBottomKey(318, "K4", "BACK");
         }
     } else {
         uiBottomKey(6, "JOY", "SELECT");
@@ -4273,7 +4277,7 @@ static void drawMenu() {
     ui::bottomBar();
     ui::keycap(8, 279, "JOY", "MOVE");
     ui::keycap(116, 279, "K3", "OPEN");
-    ui::keycap(214, 279, "K4", "HOLD BACK");
+    ui::keycap(214, 279, "K4", "BACK");
     ui::keycap(334, 279, "SW", "BACK");
 }
 
@@ -4515,15 +4519,30 @@ static void drawWordMenu() {
     ui::card(10, 202, 380, 56, g_word_cat_sel == 4);
     ui::mono(20, 220, "05");
     ui::label16(62, 226, "诗词古文");
-    ui::label12(62, 248, "出师表 5 级镂空 + 10 首诗词");
+    ui::label12(62, 248, "198 篇 · 小初高古诗文");
     ui::setInk(ui::Ink::Black);
 }
 
 static void handleWordMenu() {
-    if (in.up && !prevIn.up) g_word_cat_sel = (g_word_cat_sel + 4) % 5;
-    if (in.down && !prevIn.down) g_word_cat_sel = (g_word_cat_sel + 1) % 5;
-    if (in.x < 0 && prevIn.x >= 0) g_word_cat_sel = (g_word_cat_sel + 4) % 5;
-    if (in.x > 0 && prevIn.x <= 0) g_word_cat_sel = (g_word_cat_sel + 1) % 5;
+    int row = g_word_cat_sel < 4 ? g_word_cat_sel / 2 : 2;
+    int col = g_word_cat_sel < 4 ? g_word_cat_sel % 2 : 0;
+    if (in.up && !prevIn.up) {
+        if (row == 2) { row = 1; col = 0; }
+        else row = (row + 1) % 2;
+    }
+    if (in.down && !prevIn.down) {
+        if (row == 0) row = 1;
+        else if (row == 1) row = 2;
+        else row = 0;
+    }
+    if (in.x < 0 && prevIn.x >= 0) {
+        if (row < 2) col ^= 1;
+    }
+    if (in.x > 0 && prevIn.x <= 0) {
+        if (row < 2) col ^= 1;
+    }
+    g_word_cat_sel = (row == 2) ? 4 : row * 2 + col;
+    if (in.k4 && !prevIn.k4) g_mode = MODE_MENU;
     if (in.k3 && !prevIn.k3) {
         g_word_level = g_word_cat_sel;
         g_word_idx = 0;
@@ -5240,7 +5259,8 @@ static void handleWordInput() {
         return;
     }
     if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
-    if (in.k4 && !prevIn.k4 && g_word_level < 2) word_audio_toggle();
+    if (in.k2 && !prevIn.k2 && g_word_level < 2) word_audio_toggle();
+    if (in.k4 && !prevIn.k4) { g_mode = MODE_WORD_MENU; g_word_reveal = false; }
     if (in.up && !prevIn.up) { g_word_level = (g_word_level + 3) % 4; g_word_idx = 0; g_word_reveal = false; }
     if (in.down && !prevIn.down) { g_word_level = (g_word_level + 1) % 4; g_word_idx = 0; g_word_reveal = false; }
     if ((in.x < 0 && prevIn.x >= 0) || (in.x > 0 && prevIn.x <= 0)) {
