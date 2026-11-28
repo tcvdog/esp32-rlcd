@@ -4642,60 +4642,66 @@ static int word_level_count(int level) {
 }
 
 static void drawWordMenu() {
-    // Global frame supplies the top/bottom bars.
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 42, "闪卡记忆");
     ui::mono(110, 41, "FLASH // DECKS");
     ui::mono(340, 41, "05");
     u8g2_DrawHLine(g, 8, 48, 384);
-    const char *levels[5] = { "KET", "PET", "MATH", "PHYS", "诗词" };
-    const char *subs[5] = { "100 句 · 英语基础", "100 句 · 英语进阶", "10 张 · 初中数学", "10 张 · 初中物理", "11 篇 · 出师表验证" };
-    const int xs[2] = { 10, 204 }, ys[2] = { 58, 130 };
-    for (int i = 0; i < 4; ++i) {
-        int x = xs[i % 2], y = ys[i / 2];
-        ui::card(x, y, 186, 64, i == g_word_cat_sel);
-        char num[4];
-        snprintf(num, sizeof(num), "%02d", i + 1);
-        ui::mono(x + 10, y + 20, num);
-        ui::label16(x + 50, y + 26, levels[i]);
-        ui::label12(x + 10, y + 50, subs[i]);
+
+    // 01: poetry first, full-width.
+    {
+        ui::card(10, 58, 380, 62, g_word_cat_sel == 0);
+        ui::mono(20, 78, "01");
+        ui::label16(62, 84, "诗词古文");
+        ui::label12(62, 106, "198 篇 · 小初高古诗文 · 1 级起");
         ui::setInk(ui::Ink::Black);
     }
-    // Fifth deck: full-width, in the same industrial card style.
-    ui::card(10, 202, 380, 56, g_word_cat_sel == 4);
-    ui::mono(20, 220, "05");
-    ui::label16(62, 226, "诗词古文");
-    ui::label12(62, 248, "198 篇 · 小初高古诗文");
-    ui::setInk(ui::Ink::Black);
+    const char *levels[4] = { "KET", "PET", "MATH", "PHYS" };
+    const char *subs[4] = { "100 句 · 英语基础", "100 句 · 英语进阶",
+                            "10 张 · 初中数学", "10 张 · 初中物理" };
+    for (int i = 0; i < 4; ++i) {
+        int sel = i + 1;
+        int col = i % 2;
+        int row = i / 2;
+        int x = col == 0 ? 10 : 204;
+        int y = row == 0 ? 128 : 186;
+        ui::card(x, y, 186, 52, g_word_cat_sel == sel);
+        char num[8]; snprintf(num, sizeof(num), "%02d", sel + 1);
+        ui::mono(x + 10, y + 18, num);
+        ui::label16(x + 48, y + 24, levels[i]);
+        ui::label12(x + 10, y + 44, subs[i]);
+        ui::setInk(ui::Ink::Black);
+    }
 }
 
 static void handleWordMenu() {
-    int row = g_word_cat_sel < 4 ? g_word_cat_sel / 2 : 2;
-    int col = g_word_cat_sel < 4 ? g_word_cat_sel % 2 : 0;
+    int sel = g_word_cat_sel;
+    if (sel < 0) sel = 0;
+    if (sel > 4) sel = 4;
+    int row = (sel == 0) ? 0 : ((sel - 1) / 2 + 1);
+    int col = (sel == 0) ? 0 : ((sel - 1) % 2);
     if (in.up && !prevIn.up) {
-        if (row == 2) { row = 1; col = 0; }
-        else row = (row + 1) % 2;
+        if (row == 1) { row = 0; col = 0; }
+        else if (row == 2) { row = 1; col = 0; }
+        else { row = 2; col = 0; }
     }
     if (in.down && !prevIn.down) {
-        if (row == 0) row = 1;
+        if (row == 0) { row = 1; col = 0; }
         else if (row == 1) row = 2;
         else row = 0;
     }
-    if (in.x < 0 && prevIn.x >= 0) {
-        if (row < 2) col ^= 1;
-    }
-    if (in.x > 0 && prevIn.x <= 0) {
-        if (row < 2) col ^= 1;
-    }
-    g_word_cat_sel = (row == 2) ? 4 : row * 2 + col;
+    if (in.x < 0 && prevIn.x >= 0 && row > 0) col ^= 1;
+    if (in.x > 0 && prevIn.x <= 0 && row > 0) col ^= 1;
+    g_word_cat_sel = (row == 0) ? 0 : (1 + (row - 1) * 2 + col);
     if (in.k4 && !prevIn.k4) g_mode = MODE_MENU;
     if (in.k3 && !prevIn.k3) {
-        g_word_level = g_word_cat_sel;
+        int deck = (g_word_cat_sel == 0) ? 4 : (g_word_cat_sel - 1);
+        g_word_level = deck;
         g_word_idx = 0;
         g_cloze_level = 1;
         g_cloze_page = 0;
         g_word_reveal = false;
-        if (g_word_cat_sel == 4) {
+        if (deck == 4) {
             g_cloze_menu_sel = 0;
             g_mode = MODE_CLOZE_MENU;
         } else {
