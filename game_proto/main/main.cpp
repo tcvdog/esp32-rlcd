@@ -4653,6 +4653,34 @@ static void draw_cloze_page(const char *text, int page, int x, int y, int lineh,
     }
 }
 
+static int cloze_page_lines(const char *text, int page, int charsPerLine) {
+    if (!text) return 0;
+    int line = 0, inPage = 0;
+    const char *p = text;
+    while (*p) {
+        int chars = 0;
+        while (*p && *p != '\n' && chars < charsPerLine) {
+            int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
+        }
+        if (line >= page * 5 && line < (page + 1) * 5) ++inPage;
+        ++line;
+        if (*p == '\n') ++p;
+        else if (chars == 0) ++p;
+        if (line >= (page + 1) * 5) break;
+    }
+    return inPage;
+}
+
+static int cloze_line_width(const char *s, const char *end) {
+    int w = 0;
+    for (const char *q = s; q < end; ) {
+        int adv = 1; uint32_t cp = utf8_code(q, &adv);
+        w += cloze_advance(cp);
+        q += adv;
+    }
+    return w;
+}
+
 static void draw_cloze_overlay(const char *text, const char *mask, int page,
                               int x, int y, int lineh, int maxLines) {
     if (!text) return;
@@ -4666,6 +4694,11 @@ static void draw_cloze_overlay(const char *text, const char *mask, int page,
         }
         if (line >= page * maxLines) {
             int cx = x;
+            if (g_cloze_large) {
+                int lw = cloze_line_width(start, p);
+                cx = (400 - lw) / 2;
+                if (cx < 14) cx = 14;
+            }
             int yTop = y + shown * lineh;
             for (const char *q = start; q < p; ) {
                 int adv = 1; uint32_t cp = utf8_code(q, &adv);
@@ -4761,7 +4794,11 @@ static void drawClozeTextCard(const ClozeText &t) {
     int pages = poem_page_count(t.original, 374, maxLines);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
-    if (poetry && pages == 1) by += 16;
+    if (poetry) {
+        int pageLines = cloze_page_lines(t.original, g_cloze_page, 15);
+        by = 70 + (180 - pageLines * lineh) / 2;
+        if (by < 70) by = 70;
+    }
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 52, b);
