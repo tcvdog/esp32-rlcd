@@ -55,4 +55,12 @@ int opens(int group, int idx) {
     const ClozeProgressItem *q = get(group, idx);
     return q ? q->opens : 0;
 }
+
+int completed(int group) {
+    ensure();
+    if (group < 0 || group >= 8) return 0;
+    int n = 0;
+    for (int i = 0; i < 64; ++i) if (p[group][i].level >= 5) ++n;
+    return n;
+}
 }

@@ -14,4 +14,5 @@ void open(int group, int idx);
 void state(int group, int idx, int level, int page);
 const ClozeProgressItem *get(int group, int idx);
 int opens(int group, int idx);
+int completed(int group);
 }

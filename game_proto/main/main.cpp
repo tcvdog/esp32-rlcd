@@ -5054,7 +5054,7 @@ static void drawClozeMenu() {
     ui::mono(340, 41, "05");
     u8g2_DrawHLine(g, 8, 48, 384);
     const char *names[5] = { "小学·低年级", "小学·中高年级", "初中", "高中", "学习统计" };
-    const char *subs[5] = { "14 篇", "62 篇", "63 篇", "59 篇", "进入/退出/页面" };
+    const int totals[4] = { 14, 62, 63, 59 };
     for (int i = 0; i < 5; ++i) {
         int y = 58 + i * 38;
         bool sel = (i == g_cloze_menu_sel);
@@ -5062,7 +5062,12 @@ static void drawClozeMenu() {
         char num[4]; snprintf(num, sizeof(num), "%02d", i + 1);
         ui::mono(20, y + 20, num);
         ui::label16(62, y + 22, names[i]);
-        ui::label12(270, y + 22, subs[i]);
+        char sub[48];
+        if (i < 4)
+            snprintf(sub, sizeof(sub), "%d 篇 · 完成 %d", totals[i], cloze_progress::completed(i + 1));
+        else
+            snprintf(sub, sizeof(sub), "进入/退出/页面");
+        ui::label12(250, y + 22, sub);
         ui::setInk(ui::Ink::Black);
     }
 }
