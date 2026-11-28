@@ -3,7 +3,7 @@ import json, glob, re, sys, random
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from textbook_catalog import PRIMARY_LOW, PRIMARY_HIGH, PRIMARY_PROSE, MIDDLE_POEMS, MIDDLE_PROSE, HIGH_PROSE, HIGH_POEMS
-from alt_texts import ALT
+from alt_texts import ALT, ALT_AUTHOR
 
 # Current verified/full texts, so existing curated texts win over dataset variants.
 def parse_current():
@@ -131,6 +131,7 @@ for si,(stage,items) in enumerate(STAGES):
     for typ,title in items:
         print(f'[{si}] {title}', flush=True)
         orig,author,is_alt=find(title)
+        if not author or author == '—': author = ALT_AUTHOR.get(title, '—')
         poetry = 1 if typ!='文言文' else 0
         if not orig:
             missing.append((stage,title)); orig=''; author=author or '—'
