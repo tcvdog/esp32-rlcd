@@ -140,6 +140,7 @@ static Fighter p1, dummy;
 static Input in, prevIn;
 static bool ko = false;
 static bool g_debug_hold = false;
+static bool g_ui_frame = true;
 static char g_impact_text[16] = "";
 static float g_impact_t = 0.0f;
 static int winner = 0;
@@ -2161,46 +2162,48 @@ static void drawHud() {
     drawStatus();
 
     u8g2_SetFont(g, u8g2_font_9x15_tf);
-    u8g2_DrawStr(g, 8, 30, "P1 EMBER");
+    u8g2_DrawStr(g, 8, 46, "P1 EMBER");
     const char *ai = "AI AZURE";
-    u8g2_DrawStr(g, 392 - u8g2_GetStrWidth(g, ai), 30, ai);
+    u8g2_DrawStr(g, 392 - u8g2_GetStrWidth(g, ai), 46, ai);
 
     snprintf(txt, sizeof(txt), "%d", p1.hp);
-    u8g2_DrawStr(g, 188 - u8g2_GetStrWidth(g, txt), 30, txt);
+    u8g2_DrawStr(g, 188 - u8g2_GetStrWidth(g, txt), 46, txt);
     snprintf(txt, sizeof(txt), "%d", dummy.hp);
-    u8g2_DrawStr(g, 212, 30, txt);
+    u8g2_DrawStr(g, 212, 46, txt);
 
     // 1.5x-height HP bars.
-    u8g2_DrawFrame(g, 8, 33, 180, 14);
-    u8g2_DrawBox(g, 9, 34, (int)(178.0f * p1.hp / MAX_HP), 12);
-    u8g2_DrawFrame(g, 212, 33, 180, 14);
-    u8g2_DrawBox(g, 213, 34, (int)(178.0f * dummy.hp / MAX_HP), 12);
+    u8g2_DrawFrame(g, 8, 50, 180, 14);
+    u8g2_DrawBox(g, 9, 51, (int)(178.0f * p1.hp / MAX_HP), 12);
+    u8g2_DrawFrame(g, 212, 50, 180, 14);
+    u8g2_DrawBox(g, 213, 51, (int)(178.0f * dummy.hp / MAX_HP), 12);
     u8g2_SetDrawColor(g, 0);
     for (int i = 1; i < 4; ++i) {
-        u8g2_DrawVLine(g, 8 + i * 45, 34, 12);
-        u8g2_DrawVLine(g, 212 + i * 45, 34, 12);
+        u8g2_DrawVLine(g, 8 + i * 45, 51, 12);
+        u8g2_DrawVLine(g, 212 + i * 45, 51, 12);
     }
     u8g2_SetDrawColor(g, 1);
 
     // 1.5x gas pips, with larger GAS labels.
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 59, "GAS");
-    u8g2_DrawStr(g, 392 - u8g2_GetStrWidth(g, "GAS"), 59, "GAS");
+    u8g2_DrawStr(g, 8, 78, "GAS");
+    u8g2_DrawStr(g, 392 - u8g2_GetStrWidth(g, "GAS"), 78, "GAS");
     for (int i = 0; i < MAX_GAS; ++i) {
         int x = 34 + i * 22;
-        u8g2_DrawFrame(g, x, 50, 18, 9);
-        if (i < p1.gas) u8g2_DrawBox(g, x + 1, 51, 16, 7);
+        u8g2_DrawFrame(g, x, 69, 18, 9);
+        if (i < p1.gas) u8g2_DrawBox(g, x + 1, 70, 16, 7);
     }
     for (int i = 0; i < MAX_GAS; ++i) {
         int x = 300 + i * 22;
-        u8g2_DrawFrame(g, x, 50, 18, 9);
-        if (i < dummy.gas) u8g2_DrawBox(g, x + 1, 51, 16, 7);
+        u8g2_DrawFrame(g, x, 69, 18, 9);
+        if (i < dummy.gas) u8g2_DrawBox(g, x + 1, 70, 16, 7);
     }
 
-    // Bottom control hints, 1.5x.
-    u8g2_DrawStr(g, 8, 254, "A JAB>CROSS>HIGH   B KICK   AIR+B AIRKICK");
-    u8g2_DrawStr(g, 8, 270, "GUARD+A CTR  D+BACK+B ROLL  CLOSE+C GRAB");
-    u8g2_DrawStr(g, 8, 286, "QCF INK  D+BACK C BURST  DASH+C RUSH  C+D ULT");
+    // Bottom control hints are replaced by the global UI frame.
+    if (!g_ui_frame) {
+        u8g2_DrawStr(g, 8, 254, "A JAB>CROSS>HIGH   B KICK   AIR+B AIRKICK");
+        u8g2_DrawStr(g, 8, 270, "GUARD+A CTR  D+BACK+B ROLL  CLOSE+C GRAB");
+        u8g2_DrawStr(g, 8, 286, "QCF INK  D+BACK C BURST  DASH+C RUSH  C+D ULT");
+    }
 }
 
 static void drawArena() {
@@ -2954,9 +2957,79 @@ static void drawBackButton() {
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 276, 13, "<");
 }
+static const char *uiPathForMode() {
+    switch (g_mode) {
+        case MODE_WORD_MENU: return "SYS // FLASH";
+        case MODE_WORD: return "SYS // FLASH // CARD";
+        case MODE_PHYSICS: return "SYS // PHYSICS";
+        case MODE_SETTINGS: return "SYS // CONFIG";
+        case MODE_SETTINGS_CTRL: return "SYS // CONFIG // OUTPUT";
+        case MODE_INFO: return "SYS // CONFIG // INFO";
+        case MODE_HELP: return "SYS // CONFIG // HELP";
+        case MODE_NOTES: return "SYS // VOICE // NOTES";
+        case MODE_FEEDBACK: return "SYS // VOICE // FEEDBACK";
+        case MODE_WIFI: return "SYS // NETWORK";
+        case MODE_FILES: return "SYS // STORAGE";
+        case MODE_MUSIC: return "SYS // AUDIO";
+        case MODE_SURVEY_MENU: return "SYS // SURVEY";
+        case MODE_SURVEY: return "SYS // SURVEY // FORM";
+        case MODE_SURVEY_REPORT: return "SYS // SURVEY // REPORT";
+        case MODE_GAME: return "SYS // FIGHT";
+        case MODE_VOICE: return "SYS // VOICE";
+        default: return "SYS // LAB";
+    }
+}
+
+static void uiBottomKey(int x, const char *key, const char *action) {
+    ui::keycap(x, 279, key, action);
+}
+
+static void uiDrawFrame() {
+    if (!g_ui_frame) return;
+    if (g_mode == MODE_MENU || g_mode == MODE_VIDEO || g_mode == MODE_IMAGE) return;
+    ui::begin(g, g_no_invert);
+    ui::Status st;
+    st.wifi = g_wifi_sta; st.sd = g_sd_ok;
+    st.batteryPct = g_batt_pct; st.charging = g_charging; st.time = g_clock;
+    ui::topBar(uiPathForMode(), st);
+    ui::bottomBar();
+
+    if (g_mode == MODE_GAME) {
+        uiBottomKey(6, "K3", "JAB");
+        uiBottomKey(72, "K4", "KICK");
+        uiBottomKey(148, "K1", "HOOK");
+        uiBottomKey(232, "K2", "HIGH");
+        uiBottomKey(324, "SW", "BACK");
+    } else if (g_mode == MODE_MUSIC) {
+        uiBottomKey(4, "JOY", "SEEK");
+        uiBottomKey(70, "K1", "VOL-");
+        uiBottomKey(136, "K2", "VOL+");
+        uiBottomKey(202, "K3", "PLAY");
+        uiBottomKey(268, "K4", "NEXT");
+        uiBottomKey(334, "SW", "BACK");
+    } else if (g_mode == MODE_PHYSICS) {
+        uiBottomKey(4, "JOY", "ADJ");
+        uiBottomKey(88, "K3", "PLAY");
+        uiBottomKey(166, "K4", "RESET");
+        uiBottomKey(242, "C/D", "PAGE");
+        uiBottomKey(324, "SW", "BACK");
+    } else if (g_mode == MODE_WORD) {
+        uiBottomKey(4, "JOY", "CARD");
+        uiBottomKey(110, "K3", "FLIP");
+        if (g_word_level < 2) uiBottomKey(210, "K2", "AUDIO");
+        uiBottomKey(318, "SW", "BACK");
+    } else {
+        uiBottomKey(6, "JOY", "SELECT");
+        uiBottomKey(108, "K3", "OPEN");
+        uiBottomKey(202, "K4", "HOLD");
+        uiBottomKey(310, "SW", "BACK");
+    }
+}
+
 static void presentFrame() {
     if (g_cmd_recording || g_cmd_busy) drawCmdOverlay();
-    drawBackButton();
+    uiDrawFrame();
+    if (!g_ui_frame || g_mode == MODE_MENU || g_mode == MODE_VIDEO || g_mode == MODE_IMAGE) drawBackButton();
     uint8_t *fb = u8g2_GetBufferPtr(g);
     if (fb && !g_no_invert) {
         size_t fbBytes = (size_t)u8g2_GetBufferTileWidth(g) *
@@ -2997,7 +3070,6 @@ static const char *reset_reason_str(esp_reset_reason_t r) {
 static void drawInfo() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 156, 36, "系统信息");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     char b[96];
     if (g_info_page == 0) {
@@ -3425,7 +3497,6 @@ static void drawFiles() {
     drawStatus();
     if (g_file_view == 0) {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        u8g2_DrawUTF8(g, 148, 34, "SD 卡文件");
         u8g2_SetFont(g, u8g2_font_7x13_tf);
         char b[64];
         snprintf(b, sizeof(b), "%d FILES", g_file_count);
@@ -3440,7 +3511,6 @@ static void drawFiles() {
             u8g2_DrawStr(g, 348, y, b);
             if (i == g_file_sel) u8g2_DrawFrame(g, 8, y - 13, 384, 18);
         }
-        u8g2_DrawStr(g, 8, 276, "UP/DOWN SELECT  A PREVIEW");
         u8g2_DrawStr(g, 8, 292, "SW: BACK");
     } else {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
@@ -3880,7 +3950,6 @@ static void music_next() {
 static void drawMusic() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 142, 32, "音乐播放器");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     char b[96], t1[16], t2[16];
     if (g_music_count == 0) {
@@ -3928,8 +3997,6 @@ static void drawMusic() {
         u8g2_DrawStr(g, 14, y, b);
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 282, "A PLAY/PAUSE   B NEXT   C/D VOL   L/R SEEK");
-    u8g2_DrawStr(g, 8, 296, "UP/DOWN SELECT   SW BACK");
 }
 
 static void handleMusicInput() {
@@ -3983,7 +4050,6 @@ static void drawImage() {
 static void drawHelp() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 156, 38, "使用帮助");
     u8g2_DrawUTF8(g, 8, 86, "摇杆左右：主目录翻页");
     u8g2_DrawUTF8(g, 8, 112, "摇杆上下：当前页选择入口");
     u8g2_DrawUTF8(g, 8, 138, "A：进入当前入口");
@@ -3996,7 +4062,6 @@ static void drawHelp() {
 static void drawFeedback() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 148, 34, "语音命令");
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 8, 56, g_fb_stage);
     draw_wrapped_utf8(g_fb_detail, 8, 76, 384, 16, 2);
@@ -4161,7 +4226,6 @@ static void survey_build_report() {
 static void drawSurveyReport() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 128, 30, "调查问卷报告");
     int total = survey_total();
     char b[96];
     u8g2_SetFont(g, u8g2_font_7x13_tf);
@@ -4205,7 +4269,6 @@ static void handleSurveyReport() {
 
 static void drawSurveyMenu() {
     drawStatus();
-    drawZhCentered(MENU_SURVEY, 32);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 24, 78, "调查问卷");
     u8g2_DrawFrame(g, 16, 92, 368, 72);
@@ -4228,7 +4291,6 @@ static void handleSurveyMenu() {
 static void drawSurvey() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 128, 32, "前额叶修复调查");
     char b[48];
     snprintf(b, sizeof(b), "Q%d / 5", g_survey_q + 1);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
@@ -4276,25 +4338,25 @@ static int word_level_count(int level) {
 }
 
 static void drawWordMenu() {
-    drawStatus();
-    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-    u8g2_DrawUTF8(g, 150, 36, "闪卡记忆");
+    // Global frame supplies the top/bottom bars.
+    ui::setInk(ui::Ink::Black);
+    ui::label16(10, 42, "闪卡记忆");
+    ui::mono(110, 41, "FLASH // DECKS");
+    ui::mono(340, 41, "04");
+    u8g2_DrawHLine(g, 8, 48, 384);
     const char *levels[4] = { "KET", "PET", "MATH", "PHYS" };
     const char *subs[4] = { "100 句 · 英语基础", "100 句 · 英语进阶", "10 张 · 初中数学", "10 张 · 初中物理" };
-    const int xs[2] = { 20, 210 }, ys[2] = { 72, 152 };
+    const int xs[2] = { 10, 204 }, ys[2] = { 58, 130 };
     for (int i = 0; i < 4; ++i) {
         int x = xs[i % 2], y = ys[i / 2];
-        if (i == g_word_cat_sel) u8g2_DrawFrame(g, x - 2, y - 2, 174, 66);
-        u8g2_DrawFrame(g, x, y, 170, 62);
-        u8g2_SetFont(g, u8g2_font_10x20_tf);
-        u8g2_DrawStr(g, x + 10, y + 24, levels[i]);
-        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        u8g2_DrawUTF8(g, x + 10, y + 50, subs[i]);
+        ui::card(x, y, 186, 64, i == g_word_cat_sel);
+        char num[4];
+        snprintf(num, sizeof(num), "%02d", i + 1);
+        ui::mono(x + 10, y + 20, num);
+        ui::label16(x + 50, y + 26, levels[i]);
+        ui::label12(x + 10, y + 50, subs[i]);
+        ui::setInk(ui::Ink::Black);
     }
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 12, 244, "ARROWS SELECT   A ENTER");
-    u8g2_DrawStr(g, 12, 268, "MATH / PHYS: 10 CARDS EACH");
-    u8g2_DrawStr(g, 12, 292, "SW: BACK");
 }
 
 static void handleWordMenu() {
@@ -4353,90 +4415,59 @@ static void draw_wrapped_english(const char *s, int x, int y, int maxw, int line
 }
 
 static void drawWord() {
-    drawStatus();
     const WordCard &w = *word_card_at(g_word_level, g_word_idx);
     bool stem = (strcmp(w.level, "MATH") == 0 || strcmp(w.level, "PHYS") == 0);
+    ui::setInk(ui::Ink::Black);
     if (stem) {
-        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-        u8g2_DrawUTF8(g, 150, 32, "闪卡记忆");
-        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-        int ww = u8g2_GetUTF8Width(g, w.en);
-        u8g2_DrawUTF8(g, (SCREEN_W - ww) / 2, 66, w.en);
-        u8g2_SetFont(g, u8g2_font_7x13_tf);
-        u8g2_DrawHLine(g, 10, 80, SCREEN_W - 20);
+        ui::label16(12, 54, w.en);
+        u8g2_DrawHLine(g, 10, 64, 380);
         if (g_word_reveal) {
+            ui::label12(12, 82, "答案");
+            ui::label16(12, 108, w.zh);
+            ui::label12(12, 138, "解释");
             u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-            u8g2_DrawUTF8(g, 10, 102, "答案");
-            u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-            draw_wrapped_utf8(w.zh, 10, 124, 380, 20, 2);
-            u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-            u8g2_DrawUTF8(g, 10, 178, "解释");
-            draw_wrapped_utf8(w.sentence_zh, 10, 198, 380, 16, 4);
+            draw_wrapped_utf8(w.sentence_zh, 12, 160, 376, 16, 5);
         } else {
+            ui::label12(12, 84, "问题");
             u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-            u8g2_DrawUTF8(g, 10, 104, "问题");
-            draw_wrapped_utf8(w.sentence, 10, 128, 380, 20, 4);
-            u8g2_DrawUTF8(g, 130, 238, "按 A 显示答案");
+            draw_wrapped_utf8(w.sentence, 12, 110, 376, 20, 5);
+            ui::label12(140, 236, "K3 显示答案");
         }
-        u8g2_SetFont(g, u8g2_font_7x13_tf);
         char ib[40];
         snprintf(ib, sizeof(ib), "%s  %d / %d", w.level, g_word_idx + 1, word_level_count(g_word_level));
-        u8g2_DrawStr(g, 10, 270, ib);
-        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        u8g2_DrawUTF8(g, 12, 292, "上下分类 左右换卡 A答案 SW返回");
+        ui::mono(12, 262, ib);
         return;
     }
-    drawZhCentered(MENU_WORD, 40);
 
+    // Language cards: keep the word/sentence layout, shifted below the 24px frame.
     char upper[32];
     size_t n = strlen(w.en);
     if (n >= sizeof(upper)) n = sizeof(upper) - 1;
     for (size_t i = 0; i < n; ++i) upper[i] = (char)toupper((unsigned char)w.en[i]);
     upper[n] = 0;
-
     u8g2_SetFont(g, u8g2_font_10x20_tf);
     int ew = u8g2_GetStrWidth(g, upper);
-    u8g2_DrawStr(g, (SCREEN_W - ew) / 2, 92, upper);
-
+    u8g2_DrawStr(g, (SCREEN_W - ew) / 2, 88, upper);
     if (g_word_reveal) {
-        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-        int zw = u8g2_GetUTF8Width(g, w.zh);
-        u8g2_DrawUTF8(g, (SCREEN_W - zw) / 2, 120, w.zh);
+        ui::label16(128, 116, w.zh);
     } else {
-        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        const char *hint = "按 A 显示中文";
-        int hw = u8g2_GetUTF8Width(g, hint);
-        u8g2_DrawUTF8(g, (SCREEN_W - hw) / 2, 118, hint);
+        ui::label12(140, 116, "K3 显示中文");
     }
-
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawHLine(g, 10, 132, SCREEN_W - 20);
-
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 8, 148, "例句");
-
-    // Larger 10x20 example sentence, max 3 lines.
+    u8g2_DrawHLine(g, 10, 128, 380);
+    ui::label12(8, 146, "例句");
     u8g2_SetFont(g, u8g2_font_10x20_tf);
     char sbuf[160];
     snprintf(sbuf, sizeof(sbuf), "%s", w.sentence);
     size_t sl = strlen(sbuf);
     while (sl > 0 && (sbuf[sl-1] == '.' || sbuf[sl-1] == ' ')) sbuf[--sl] = 0;
-    draw_wrapped_english(sbuf, 8, 168, 384, 20, 3);
-
+    draw_wrapped_english(sbuf, 8, 166, 384, 20, 3);
     if (g_word_reveal) {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        draw_wrapped_utf8(w.sentence_zh, 8, 238, 384, 16, 2);
+        draw_wrapped_utf8(w.sentence_zh, 8, 234, 384, 16, 2);
     }
-
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char idx[40];
-    snprintf(idx, sizeof(idx), "%s  %d / %d", w.level, g_word_idx + 1, word_level_count(g_word_level));
-    u8g2_DrawStr(g, 8, 270, idx);
-
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    const char *keys = "上下分类 左右换句 A释义 D朗读 SW返回";
-    int kw = u8g2_GetUTF8Width(g, keys);
-    u8g2_DrawUTF8(g, (SCREEN_W - kw) / 2, 292, keys);
+    char ib[40];
+    snprintf(ib, sizeof(ib), "%s  %d / %d", w.level, g_word_idx + 1, word_level_count(g_word_level));
+    ui::mono(8, 262, ib);
 }
 
 static void word_audio_toggle() {
@@ -4521,42 +4552,23 @@ static void goBack();
 static void wifi_enter();
 
 static void drawSettingsMenu() {
-    drawStatus();
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 176, 32, "设置");
-
-    const ZhGlyph *glyphs[6] = { &MENU_AV, nullptr, &MENU_INFO, &MENU_HELP, &MENU_VOICE, &MENU_FEEDBACK };
+    const char *labels[6] = { "声音", "Wi-Fi", "系统信息", "使用帮助", "语音记录", "命令反馈" };
     const char *subs[6] = {
         "音量 / 亮度", "扫描 / 密码", "3 页信息",
         "摇杆 / 按键", "录音记录", "执行反馈"
     };
-    const int cw = 186, ch = 50;
+    const int xs[2] = { 10, 204 }, ys[3] = { 42, 108, 174 };
     for (int i = 0; i < 6; ++i) {
-        int col = i % 2, row = i / 2;
-        int x = 8 + col * 198;
-        int y = 46 + row * 55;
-        if (i == g_settings_sel) {
-            u8g2_DrawFrame(g, x - 2, y - 2, cw + 4, ch + 4);
-            u8g2_DrawFrame(g, x, y, cw, ch);
-        } else {
-            u8g2_DrawFrame(g, x, y, cw, ch);
-        }
-        if (i == 1) {
-            u8g2_SetFont(g, u8g2_font_10x20_tf);
-            int w = u8g2_GetStrWidth(g, "Wi-Fi");
-            u8g2_DrawStr(g, x + (cw - w) / 2, y + 28, "Wi-Fi");
-        } else {
-            drawZh(*glyphs[i], x + (cw - 96) / 2, y + 5);
-        }
-        u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-        int sw = u8g2_GetUTF8Width(g, subs[i]);
-        u8g2_DrawUTF8(g, x + (cw - sw) / 2, y + 46, subs[i]);
+        int x = xs[i % 2], y = ys[i / 2];
+        ui::card(x, y, 186, 58, i == g_settings_sel);
+        char num[4]; snprintf(num, sizeof(num), "%02d", i + 1);
+        ui::mono(x + 10, y + 18, num);
+        ui::label16(x + 12, y + 42, labels[i]);
+        ui::label12(x + 100, y + 42, subs[i]);
+        ui::setInk(ui::Ink::Black);
     }
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 280, "ARROWS SELECT   A ENTER");
-    u8g2_DrawStr(g, 8, 294, "B: BACK   SW: BACK");
+    (void)subs;
 }
-
 
 static void handleSettingsMenu() {
     if (in.up && !prevIn.up) { g_settings_sel = (g_settings_sel >= 2) ? g_settings_sel - 2 : g_settings_sel; }
@@ -4579,7 +4591,6 @@ static void handleSettingsMenu() {
 
 static void drawSettingsCtrl() {
     drawStatus();
-    drawZhCentered(MENU_AV, 30);
     char b[32];
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 24, 82, "音量");
@@ -4597,7 +4608,6 @@ static void drawSettingsCtrl() {
     u8g2_DrawUTF8(g, 16, 190, "音量：真实 ES8311 输出");
     u8g2_DrawUTF8(g, 16, 210, "亮度：ST7305 电子对比度");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 244, "UP/DOWN SELECT   L/R ADJUST");
     u8g2_DrawStr(g, 8, 266, "A: TEST TONE   B: RESET");
     u8g2_DrawStr(g, 8, 288, "SW: BACK");
 }
@@ -4673,7 +4683,6 @@ static void wifi_connect_saved() {
 static void drawWifi() {
     drawStatus();
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 154, 32, "Wi-Fi 设置");
 
     if (g_wifi_view == 0) {
         char line[64];
@@ -4690,7 +4699,6 @@ static void drawWifi() {
             if (i == g_wifi_sel) u8g2_DrawFrame(g, 12, y - 13, 376, 19);
         }
         u8g2_SetFont(g, u8g2_font_7x13_tf);
-        u8g2_DrawStr(g, 8, 270, "UP/DOWN SELECT  A CHOOSE  B RESCAN");
         u8g2_DrawStr(g, 8, 288, "SW: BACK");
         return;
     }
@@ -5113,7 +5121,6 @@ static void drawVoice() {
         return;
     }
 
-    drawZhCentered(MENU_VOICE, 42);
     u8g2_SetFont(g, u8g2_font_9x15_tf);
     u8g2_DrawStr(g, 20, 95, "C+D HOLD: TALK 60s");
     u8g2_DrawStr(g, 20, 125, "RELEASE: SEND / SW: BACK");
@@ -5402,17 +5409,8 @@ static void darkBegin() {
     g_no_invert = true;
 }
 
-static void darkHeader(const char *crumb, const char *title, int page) {
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 8, 10, crumb);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-    u8g2_DrawUTF8(g, 8, 32, title);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char pg[16];
-    snprintf(pg, sizeof(pg), "%d/3", page + 1);
-    u8g2_DrawStr(g, 350, 12, pg);
-    u8g2_DrawHLine(g, 8, 38, 384);
+static void darkHeader(const char *, const char *, int) {
+    // Global UI frame owns the top bar and page path.
 }
 
 static void drawCard(int x, int y, int w, int h) {
@@ -7809,7 +7807,6 @@ static void drawPhysicsMenu() {
         }
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 270, "UP/DOWN SELECT   A ENTER");
     u8g2_DrawStr(g, 8, 292, "SW: BACK");
 }
 

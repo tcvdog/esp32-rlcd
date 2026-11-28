@@ -6,14 +6,18 @@
 
 namespace ui {
 static u8g2_t *s = nullptr;
+static uint8_t s_black = 1;
+static uint8_t s_white = 0;
 
-void begin(u8g2_t *g) {
+void begin(u8g2_t *g, bool inverted) {
     s = g;
-    u8g2_SetDrawColor(s, 1);
+    s_black = inverted ? 0 : 1;
+    s_white = inverted ? 1 : 0;
+    u8g2_SetDrawColor(s, s_black);
     u8g2_SetBitmapMode(s, 0);
 }
 
-void setInk(Ink ink) { u8g2_SetDrawColor(s, ink == Ink::Black ? 1 : 0); }
+void setInk(Ink ink) { u8g2_SetDrawColor(s, ink == Ink::Black ? s_black : s_white); }
 
 void label12(int x, int y, const char *utf8) {
     u8g2_SetFont(s, u8g2_font_wqy12_t_gb2312);
@@ -113,6 +117,9 @@ void keycap(int x, int y, const char *key, const char *action) {
 }
 
 void bottomBar() {
+    // Clear the old 24px hint band before drawing the new one.
+    setInk(Ink::White);
+    u8g2_DrawBox(s, 0, BOTTOM_Y, W, BOTTOM_H);
     setInk(Ink::Black);
     for (int x = 8; x < 392; x += 8) u8g2_DrawPixel(s, x, BOTTOM_Y);
     u8g2_SetFont(s, u8g2_font_7x13_tf);

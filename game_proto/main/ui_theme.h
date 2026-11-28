@@ -21,7 +21,7 @@ struct Status {
 
 enum class Ink { Black, White };
 
-void begin(u8g2_t *g);
+void begin(u8g2_t *g, bool inverted = false);
 void setInk(Ink ink);
 
 void topBar(const char *path, const Status &st);
