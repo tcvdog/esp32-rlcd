@@ -48,7 +48,7 @@ def token_spans(text):
 
 def mask_level(text, spans, level):
     pct = {1: .10, 2: .30, 3: .50, 4: .70, 5: 1.0}[level]
-    # Build sentences containing whole token indices.
+    # Group token indices into sentences.
     sentences, cur = [], []
     for ti, (w, a, b) in enumerate(spans):
         if all(is_punct(c) for c in w):
@@ -65,16 +65,15 @@ def mask_level(text, spans, level):
         return mask
     target = int(content_total * pct)
     rng = random.Random(level * 7919)
-    selected = set()
+    anchors = set()
+    candidates = []
     for sent in sentences:
-        # Anchor: first content word stays visible.
         anchor = None
         for ti in sent:
             w, a, b = spans[ti]
             if any(is_cjk(c) for c in w):
                 anchor = ti; break
-        # Shuffle whole words, but never choose two adjacent words.
-        cand = []
+        if anchor is not None: anchors.add(anchor)
         for ti in sent:
             if ti == anchor: continue
             w, a, b = spans[ti]
@@ -83,18 +82,39 @@ def mask_level(text, spans, level):
             if len(cjk) > 4: continue
             if all(c in STOP for c in cjk): continue
             if any(is_punct(c) for c in w): continue
-            cand.append(ti)
-        rng.shuffle(cand)
-        for ti in cand:
+            candidates.append(ti)
+    # Distribute masks over 8 text bands so every page has some blanks.
+    BANDS = 8
+    by_band = [[] for _ in range(BANDS)]
+    for ti in candidates:
+        _, a, b = spans[ti]
+        band = min(BANDS - 1, a * BANDS // max(1, len(text)))
+        by_band[band].append(ti)
+    selected = set()
+    total = 0
+    for band in range(BANDS):
+        rng.shuffle(by_band[band])
+        band_target = target // BANDS + (1 if band < target % BANDS else 0)
+        band_count = 0
+        for ti in by_band[band]:
             if ti in selected: continue
-            # adjacent token in the same sentence?
             if (ti - 1) in selected or (ti + 1) in selected: continue
+            _, a, b = spans[ti]
+            n = sum(1 for i in range(a, b) if is_cjk(text[i]))
+            if band_count > 0 and band_count + n > band_target + 4: continue
             selected.add(ti)
-            # Stop once global target is reached.
-            count = sum(1 for si in selected for i in range(spans[si][1], spans[si][2]) if is_cjk(text[i]))
-            if count >= target: break
-        count = sum(1 for si in selected for i in range(spans[si][1], spans[si][2]) if is_cjk(text[i]))
-        if count >= target: break
+            band_count += n
+            total += n
+            if band_count >= band_target: break
+    # If bands were too sparse, fill from global candidates.
+    if total < target:
+        for ti in candidates:
+            if ti in selected: continue
+            if (ti - 1) in selected or (ti + 1) in selected: continue
+            _, a, b = spans[ti]
+            n = sum(1 for i in range(a, b) if is_cjk(text[i]))
+            selected.add(ti); total += n
+            if total >= target: break
     for ti in selected:
         w, a, b = spans[ti]
         for i in range(a, b):
