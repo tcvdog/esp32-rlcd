@@ -4337,6 +4337,7 @@ static void select_user(int id) {
     g_user = id;
     ui::setUser(g_user_names[id]);
     cloze_progress::set_user(id);
+    ui::setScore(cloze_progress::total_score());
     cloze_stats::set_user(id);
     cloze_eventlog::set_user(id);
     g_mode = MODE_MENU;
@@ -4346,6 +4347,7 @@ static void drawUserSelect() {
     g_no_invert = false;
     g_dark_ui = false;
     ui::setUser(g_user_names[g_user]);
+    ui::setScore(cloze_progress::total_score());
     ui::begin(g);
     ui::Status st;
     st.wifi = g_wifi_sta; st.sd = g_sd_ok; st.batteryPct = g_batt_pct;
@@ -5219,6 +5221,7 @@ static void cloze_award_level(int level) {
                               level, -timePenalty, total, g_level_reveals, "time", td);
     }
     int net = delta - penalty - timePenalty;
+    ui::setScore(cloze_progress::total_score());
     show_score_badge(level, delta, penalty, net, g_level_reveals, elapsed, timePenalty);
     cloze_event("level_score", "JOY");
     char ld[32];
@@ -5603,6 +5606,7 @@ static void handleWordInput() {
                         ++g_level_reveals;
                         cloze_progress::add_score(g_cloze_group, g_cloze_idx, -3);
                         int hintTotal = cloze_progress::total_score();
+                        ui::setScore(cloze_progress::total_score());
                         char hd[64];
                         snprintf(hd, sizeof(hd), "第%d次使用原文，本级共减%d", g_level_reveals,
                                  g_level_reveals * 3);

@@ -27,6 +27,7 @@ void setInk(Ink ink);
 
 void topBar(const char *path, const Status &st);
 void setUser(const char *name);
+void setScore(int score);
 void bottomBar();
 void keycap(int x, int y, const char *key, const char *action);
 

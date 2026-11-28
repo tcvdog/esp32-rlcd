@@ -9,6 +9,7 @@ static u8g2_t *s = nullptr;
 static uint8_t s_black = 1;
 static uint8_t s_white = 0;
 static const char *s_user = nullptr;
+static int s_score = 0;
 
 u8g2_t *g() { return s; }
 
@@ -123,6 +124,7 @@ void progress(int x, int y, int w, int value, int max) {
 }
 
 void setUser(const char *name) { s_user = name; }
+void setScore(int score) { s_score = score; }
 
 void topBar(const char *path, const Status &st) {
     setInk(Ink::Black);
@@ -133,6 +135,10 @@ void topBar(const char *path, const Status &st) {
     if (s_user) {
         u8g2_SetFont(s, u8g2_font_wqy12_t_gb2312);
         u8g2_DrawUTF8(s, 180, 17, s_user);
+        int uw = u8g2_GetUTF8Width(s, s_user);
+        char sc[20];
+        snprintf(sc, sizeof(sc), "%d分", s_score);
+        u8g2_DrawUTF8(s, 180 + uw + 7, 17, sc);
         u8g2_SetFont(s, u8g2_font_7x13_tf);
     }
     // Right-side status: WiFi / SD / battery text + icon.
