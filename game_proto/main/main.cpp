@@ -57,6 +57,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "freertos/idf_additions.h"
 #include "user_config.h"
 #include "fw_version.h"
+#include "ui_theme.h"
 #include "win_glyphs.h"
 #include "menu_glyphs.h"
 #include "word_cards.h"
@@ -4022,164 +4023,54 @@ static void drawFeedback() {
     u8g2_DrawStr(g, 300, 276, g_fb_time);
 }
 
-static void drawMenuArt(int item, int x, int y, int w, int h) {
-    u8g2_SetDrawColor(g, 1);
-    int cx = x + w / 2, cy = y + h / 2;
-    u8g2_SetFont(g, u8g2_font_10x20_tf);
-    char num[16];
-    snprintf(num, sizeof(num), "%02d", item + 1);
-    u8g2_DrawStr(g, x + w - 30, y + 22, num);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-
-    switch (item) {
-        case 0: // Word book
-            u8g2_DrawLine(g, cx - 46, cy - 24, cx, cy - 10);
-            u8g2_DrawLine(g, cx + 46, cy - 24, cx, cy - 10);
-            u8g2_DrawLine(g, cx - 46, cy - 24, cx - 46, cy + 22);
-            u8g2_DrawLine(g, cx + 46, cy - 24, cx + 46, cy + 22);
-            u8g2_DrawLine(g, cx, cy - 10, cx, cy + 26);
-            u8g2_DrawLine(g, cx - 46, cy + 22, cx, cy + 30);
-            u8g2_DrawLine(g, cx + 46, cy + 22, cx, cy + 30);
-            for (int i = 0; i < 4; ++i) {
-                u8g2_DrawLine(g, cx - 38, cy - 15 + i * 9, cx - 8, cy - 7 + i * 9);
-                u8g2_DrawLine(g, cx + 8, cy - 7 + i * 9, cx + 38, cy - 15 + i * 9);
-            }
-            u8g2_SetFont(g, u8g2_font_10x20_tf);
-            u8g2_DrawStr(g, cx - 38, cy + 54, "KET");
-            u8g2_DrawStr(g, cx + 12, cy + 54, "PET");
-            break;
-        case 1: // Physics orbit + trajectory
-            for (int i = 0; i < 3; ++i) {
-                u8g2_DrawCircle(g, cx, cy, 18 + i * 10, U8G2_DRAW_ALL);
-            }
-            u8g2_DrawDisc(g, cx, cy, 5, U8G2_DRAW_ALL);
-            for (int k = 0; k < 30; ++k) {
-                int px = cx - 58 + k * 4;
-                int py = cy + 40 - (k * k) / 9;
-                u8g2_DrawPixel(g, px, py);
-            }
-            u8g2_DrawStr(g, x + 12, y + h - 14, "F = ma");
-            break;
-        case 2: // SD card
-            u8g2_DrawFrame(g, cx - 34, cy - 40, 68, 82);
-            u8g2_DrawBox(g, cx - 26, cy - 35, 52, 18);
-            u8g2_DrawLine(g, cx - 26, cy - 10, cx + 26, cy - 10);
-            for (int i = 0; i < 4; ++i) u8g2_DrawBox(g, cx - 24 + i * 14, cy + 38, 7, 5);
-            u8g2_SetFont(g, u8g2_font_10x20_tf);
-            u8g2_DrawStr(g, cx - 20, cy + 25, "SD");
-            break;
-        case 3: // Music note + waves
-            u8g2_DrawDisc(g, cx - 28, cy + 28, 10, U8G2_DRAW_ALL);
-            u8g2_DrawDisc(g, cx + 24, cy + 22, 10, U8G2_DRAW_ALL);
-            u8g2_DrawLine(g, cx - 19, cy + 28, cx - 19, cy - 32);
-            u8g2_DrawLine(g, cx + 33, cy + 22, cx + 33, cy - 38);
-            u8g2_DrawLine(g, cx - 19, cy - 32, cx + 33, cy - 38);
-            u8g2_DrawLine(g, cx - 19, cy - 22, cx + 33, cy - 28);
-            for (int i = 0; i < 4; ++i) {
-                int r = 32 + i * 8;
-                for (int a = 205; a < 335; a += 8) {
-                    float rad = a * 3.14159f / 180.0f;
-                    u8g2_DrawPixel(g, cx + (int)(cosf(rad) * r), cy + (int)(sinf(rad) * r));
-                }
-            }
-            break;
-        case 4: // Survey clipboard
-            u8g2_DrawFrame(g, cx - 36, cy - 42, 72, 88);
-            u8g2_DrawBox(g, cx - 14, cy - 48, 28, 12);
-            for (int i = 0; i < 4; ++i) {
-                int yy = cy - 22 + i * 17;
-                u8g2_DrawFrame(g, cx - 26, yy - 9, 10, 10);
-                if (i < 3) {
-                    u8g2_DrawLine(g, cx - 24, yy - 4, cx - 21, yy);
-                    u8g2_DrawLine(g, cx - 21, yy, cx - 16, yy - 7);
-                }
-                u8g2_DrawLine(g, cx - 8, yy - 4, cx + 26, yy - 4);
-            }
-            break;
-        default: // Settings gear
-            for (int i = 0; i < 8; ++i) {
-                float a = i * 3.14159f / 4.0f;
-                int x0 = cx + (int)(cosf(a) * 36), y0 = cy + (int)(sinf(a) * 36);
-                int x1 = cx + (int)(cosf(a) * 50), y1 = cy + (int)(sinf(a) * 50);
-                u8g2_DrawLine(g, x0, y0, x1, y1);
-                u8g2_DrawDisc(g, x1, y1, 3, U8G2_DRAW_ALL);
-            }
-            u8g2_DrawCircle(g, cx, cy, 30, U8G2_DRAW_ALL);
-            u8g2_DrawCircle(g, cx, cy, 12, U8G2_DRAW_ALL);
-            break;
-    }
-}
-
 static void drawMenu() {
     g_no_invert = false;
     g_dark_ui = false;
-    u8g2_ClearBuffer(g);
-    u8g2_SetDrawColor(g, 1);
+    ui::begin(g);
+    ui::Status st;
+    st.wifi = g_wifi_sta;
+    st.sd = g_sd_ok;
+    st.batteryPct = g_batt_pct;
+    st.charging = g_charging;
+    st.time = g_clock;
+    ui::topBar("SYS // MAIN", st);
 
-    // Title rail: black block with a game-logo feel.
-    u8g2_DrawBox(g, 0, 0, SCREEN_W, 46);
-    u8g2_SetDrawColor(g, 0);
-    u8g2_SetFont(g, u8g2_font_10x20_tf);
-    u8g2_DrawStr(g, 8, 24, "RLCD");
-    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-    u8g2_DrawUTF8(g, 78, 23, "实验终端");
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 41, "LAB // INTERACTIVE SYSTEMS");
-    u8g2_DrawStr(g, 320, 41, FW_VERSION);
-    u8g2_SetDrawColor(g, 1);
+    ui::setInk(ui::Ink::Black);
+    ui::label16(10, 46, "控制台");
+    ui::mono(76, 45, "MAIN // MODULES");
+    ui::mono(334, 45, "06");
+    u8g2_DrawHLine(g, 8, 52, 384);
+    for (int x = 12; x < 392; x += 20) u8g2_DrawLine(g, x, 49, x, 52);
 
     const char *labels[6] = { "闪卡记忆", "物理实验", "SD 卡", "音乐", "调查问卷", "设置" };
     const char *codes[6] = { "FLASH", "PHYSICS", "FILES", "AUDIO", "SURVEY", "CONFIG" };
-    const int top = 64, step = 29;
+    const char *nums[6] = { "01", "02", "03", "04", "05", "06" };
+    const int xs[2] = { 10, 204 }, ys[3] = { 60, 128, 196 };
     for (int i = 0; i < 6; ++i) {
-        int y = top + i * step;
+        int x = xs[i % 2], y = ys[i / 2];
         bool sel = (i == g_menu_sel);
-        if (sel) {
-            u8g2_SetDrawColor(g, 1);
-            u8g2_DrawBox(g, 8, y - 16, 188, 27);
-            u8g2_SetDrawColor(g, 0);
-        } else {
-            u8g2_SetDrawColor(g, 1);
-            u8g2_DrawLine(g, 12, y + 8, 196, y + 8);
-        }
-        u8g2_SetFont(g, u8g2_font_7x13_tf);
-        char n[8]; snprintf(n, sizeof(n), "%02d", i + 1);
-        u8g2_DrawStr(g, 16, y, n);
-        u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
-        u8g2_DrawUTF8(g, 44, y + 3, labels[i]);
-        u8g2_SetFont(g, u8g2_font_7x13_tf);
-        u8g2_DrawStr(g, 126, y, codes[i]);
-        if (sel) u8g2_DrawStr(g, 184, y, ">");
-        u8g2_SetDrawColor(g, 1);
+        ui::card(x, y, 186, 60, sel);
+        ui::mono(x + 10, y + 18, nums[i]);
+        ui::label16(x + 42, y + 24, labels[i]);
+        ui::mono(x + 10, y + 48, codes[i]);
+        if (sel) ui::mono(x + 160, y + 48, ">");
+        ui::setInk(ui::Ink::Black);
     }
 
-    // Preview card: the "hero art".
-    int px = 208, py = 60, pw = 184, ph = 176;
-    u8g2_DrawFrame(g, px, py, pw, ph);
-    u8g2_DrawLine(g, px, py, px + 10, py);
-    u8g2_DrawLine(g, px, py, px, py + 10);
-    u8g2_DrawLine(g, px + pw - 10, py + ph, px + pw, py + ph);
-    u8g2_DrawLine(g, px + pw, py + ph - 10, px + pw, py + ph);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, px + 10, py + 16, "PREVIEW");
-    drawMenuArt(g_menu_sel, px + 8, py + 20, pw - 16, ph - 28);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, px + 10, py + ph - 8, codes[g_menu_sel]);
-
-    // Telemetry and commands.
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char b[64];
-    snprintf(b, sizeof(b), "SD %s   RTC %s   BAT %d%%   NET %s",
-             g_sd_ok ? "OK" : "--", g_rtc_ok ? g_clock : "--:--",
-             g_batt_pct, g_wifi_sta ? "UP" : "--");
-    u8g2_DrawStr(g, 12, 254, b);
-    u8g2_DrawStr(g, 12, 274, "UP/DN  SELECT       A  ENTER");
-    u8g2_DrawStr(g, 12, 292, "RLCD-4.2  /  MONO 1BPP  /  LOCAL");
+    ui::bottomBar();
+    ui::keycap(8, 279, "JOY", "MOVE");
+    ui::keycap(116, 279, "K3", "OPEN");
+    ui::keycap(214, 279, "K4", "HOLD BACK");
+    ui::keycap(334, 279, "SW", "BACK");
 }
 
 static void handleMenuInput() {
-    if (in.down && !prevIn.down) g_menu_sel = (g_menu_sel + 1) % 6;
-    if (in.up && !prevIn.up) g_menu_sel = (g_menu_sel + 5) % 6;
+    int row = g_menu_sel / 2, col = g_menu_sel % 2;
+    if (in.down && !prevIn.down) row = (row + 1) % 3;
+    if (in.up && !prevIn.up) row = (row + 2) % 3;
+    if (in.x < 0 && prevIn.x >= 0) col ^= 1;
+    if (in.x > 0 && prevIn.x <= 0) col ^= 1;
+    g_menu_sel = row * 2 + col;
 
     if (in.k3 && !prevIn.k3) {
         switch (g_menu_sel) {
@@ -8080,6 +7971,20 @@ static void gameTask(void *arg) {
         }
 
         in = readInput();
+        static int64_t k4_down_us = 0;
+        static bool k4_back_fired = false;
+        if (!in.k4) {
+            k4_down_us = 0;
+            k4_back_fired = false;
+        } else {
+            if (k4_down_us == 0) k4_down_us = now;
+            if (!k4_back_fired && g_mode != MODE_MENU && now - k4_down_us > 700000LL) {
+                k4_back_fired = true;
+                goBack();
+                prevIn = in;
+                continue;
+            }
+        }
         bool cd = in.k1 && in.k2;
         static bool cd_prev = false;
         if (cd && !cd_prev && !g_cmd_busy) cmd_start();
