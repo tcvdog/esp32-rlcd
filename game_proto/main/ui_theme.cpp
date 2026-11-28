@@ -8,6 +8,7 @@ namespace ui {
 static u8g2_t *s = nullptr;
 static uint8_t s_black = 1;
 static uint8_t s_white = 0;
+static const char *s_user = nullptr;
 
 u8g2_t *g() { return s; }
 
@@ -121,12 +122,19 @@ void progress(int x, int y, int w, int value, int max) {
     if (fw > 0) u8g2_DrawRBox(s, x + 2, y + 2, fw, 4, 2);
 }
 
+void setUser(const char *name) { s_user = name; }
+
 void topBar(const char *path, const Status &st) {
     setInk(Ink::Black);
     u8g2_DrawBox(s, 0, 0, W, TOP_H);
     setInk(Ink::White);
     u8g2_SetFont(s, u8g2_font_7x13_tf);
     u8g2_DrawStr(s, 8, 16, path);
+    if (s_user) {
+        u8g2_SetFont(s, u8g2_font_wqy12_t_gb2312);
+        u8g2_DrawUTF8(s, 180, 17, s_user);
+        u8g2_SetFont(s, u8g2_font_7x13_tf);
+    }
     // Right-side status: WiFi / SD / battery text + icon.
     u8g2_SetBitmapMode(s, 1);
     u8g2_DrawXBMP(s, 292, 7, 12, 12, UI_ICON_WIFI);

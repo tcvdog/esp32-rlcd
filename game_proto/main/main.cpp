@@ -4272,6 +4272,7 @@ static void select_user(int id) {
     if (id < 0) id = 0;
     if (id > 2) id = 2;
     g_user = id;
+    ui::setUser(g_user_names[id]);
     cloze_progress::set_user(id);
     cloze_stats::set_user(id);
     cloze_eventlog::set_user(id);
@@ -4281,6 +4282,7 @@ static void select_user(int id) {
 static void drawUserSelect() {
     g_no_invert = false;
     g_dark_ui = false;
+    ui::setUser(g_user_names[g_user]);
     ui::begin(g);
     ui::Status st;
     st.wifi = g_wifi_sta; st.sd = g_sd_ok; st.batteryPct = g_batt_pct;
@@ -4328,7 +4330,6 @@ static void drawMenu() {
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 46, "控制台");
     ui::mono(76, 45, "MAIN // MODULES");
-    ui::label12(240, 45, g_user_names[g_user]);
     ui::mono(340, 45, "06");
     u8g2_DrawHLine(g, 8, 52, 384);
     for (int x = 12; x < 392; x += 20) u8g2_DrawLine(g, x, 49, x, 52);
