@@ -4583,6 +4583,50 @@ static void draw_cloze_page(const char *text, int page, int x, int y, int lineh,
     }
 }
 
+static void draw_cloze_overlay(const char *text, const char *mask, int page,
+                              int x, int y, int lineh, int maxLines) {
+    if (!text) return;
+    int line = 0, shown = 0;
+    const char *p = text;
+    while (*p && line < (page + 1) * maxLines) {
+        const char *start = p;
+        int chars = 0;
+        while (*p && *p != '\n' && chars < 18) {
+            int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
+        }
+        if (line >= page * maxLines) {
+            int cx = x;
+            int yTop = y + shown * lineh;
+            for (const char *q = start; q < p; ) {
+                int adv = 1; uint32_t cp = utf8_code(q, &adv);
+                bool hidden = false;
+                if (mask && !g_word_reveal) {
+                    int moff = (int)(q - text);
+                    unsigned char mc = (unsigned char)mask[moff];
+                    hidden = (mc == 0xE2 || mc == '_'); // ○ U+25CB is E2 97 8B
+                }
+                int gw = cloze_advance(cp);
+                if (!hidden) {
+                    cloze_glyph_draw(cx, yTop, cp);
+                } else {
+                    // Clear the exact glyph cell, then draw a black ring around
+                    // the white hole. Character position is unchanged.
+                    u8g2_SetDrawColor(ui::g(), 0);
+                    u8g2_DrawBox(ui::g(), cx, yTop, gw, 20);
+                    u8g2_SetDrawColor(ui::g(), 1);
+                    u8g2_DrawCircle(ui::g(), cx + gw / 2, yTop + 10, 8, U8G2_DRAW_ALL);
+                }
+                cx += gw;
+                q += adv;
+            }
+            ++shown;
+        }
+        ++line;
+        if (*p == '\n') ++p;
+        else if (p == start) ++p;
+    }
+}
+
 static int poem_utf8_chars(const char *s) {
     int n = 0;
     for (const char *p = s; *p; p += utf8_len((unsigned char)*p)) ++n;
@@ -4638,17 +4682,17 @@ static void drawChushi() {
     ui::panel(6, 32, 388, 218);
     ui::label16(14, 54, "出师表");
     ui::label12(14, 72, "三国 · 诸葛亮");
-    int pages = poem_page_count(g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1], 374, 6);
+    int pages = poem_page_count(CHUSHI_ORIGINAL, 374, 6);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 54, b);
     u8g2_DrawHLine(g, 12, 80, 376);
-    const char *body = g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1];
-    draw_cloze_page(body, g_cloze_page, 14, 88, 24, 374, 6);
+    const char *mask = g_word_reveal ? nullptr : CHUSHI_LEVELS[g_cloze_level - 1];
+    draw_cloze_overlay(CHUSHI_ORIGINAL, mask, g_cloze_page, 14, 88, 24, 6);
     char hint[96];
-    snprintf(hint, sizeof(hint), "%s   换篇 / 调级 / 翻页",
+    snprintf(hint, sizeof(hint), "换篇 / 调级 / 翻页   %s",
              g_word_reveal ? "原文 K3 返回镂空" : "镂空遮挡 K3 显示原文");
     ui::label12(14, 264, hint);
 }
