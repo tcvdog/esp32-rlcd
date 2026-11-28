@@ -5045,15 +5045,12 @@ static void cloze_load_state(int group, int idx) {
     const ClozeProgressItem *p = cloze_progress::get(group, idx);
     g_seen_pages = p ? p->seen : 0;
     g_level_reveals = p ? p->reveals : 0;
+    g_cloze_level = p && p->level ? p->level : 1;
+    if (g_cloze_level > 6) g_cloze_level = 6;
+    g_cloze_page = p ? p->page : 0;
     if (p && p->done) {
-        g_cloze_level = 1;
-        g_cloze_page = 0;
         g_seen_pages = 0;
         g_level_reveals = 0;
-    } else {
-        g_cloze_level = p && p->level ? p->level : 1;
-        if (g_cloze_level > 5) g_cloze_level = 5;
-        g_cloze_page = p ? p->page : 0;
     }
     g_hint_tokens = 3 - g_level_reveals;
     if (g_hint_tokens < 0) g_hint_tokens = 0;
@@ -5076,7 +5073,7 @@ static void cloze_submit_level() {
         cloze_event("level_incomplete", "JOY");
         return;
     }
-    if (g_cloze_level >= 5) {
+    if (g_cloze_level >= 6) {
         cloze_progress::update(g_cloze_group, g_cloze_idx, g_cloze_level, 0,
                                g_seen_pages, g_level_reveals, 1);
         cloze_event("level_complete", "JOY");
@@ -5112,7 +5109,10 @@ static void cloze_enter_card(int group, int idx) {
     const ClozeText *entry = cloze_text_for(group, idx);
     if (entry) {
         snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", entry->original ? entry->original : "");
-        snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", entry->levels[g_cloze_level - 1]);
+        if (g_cloze_level >= 1 && g_cloze_level <= 5)
+            snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", entry->levels[g_cloze_level - 1]);
+        else
+            snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", entry->original ? entry->original : "");
     } else if (group <= 0) {
         snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", CHUSHI_ORIGINAL);
         snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", CHUSHI_LEVELS[g_cloze_level - 1]);
