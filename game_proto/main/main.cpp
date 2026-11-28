@@ -4812,6 +4812,7 @@ static void cloze_append(const char *event) {
 static void cloze_enter_card(int group, int idx) {
     g_cloze_group = group;
     g_cloze_idx = idx;
+    g_cloze_list_sel = idx;
     g_word_level = 4;
     g_word_reveal = false;
     g_cloze_page = 0;
@@ -4836,6 +4837,7 @@ static void cloze_switch(int delta) {
     cloze_stats::exitSession();
     cloze_append("exit");
     g_cloze_idx = (g_cloze_idx + cnt + delta) % cnt;
+    g_cloze_list_sel = g_cloze_idx;
     g_cloze_page = 0;
     g_word_reveal = false;
     g_cloze_stat_level = -1;
@@ -4895,6 +4897,7 @@ static void handleClozeMenu() {
         else if (g_cloze_menu_sel == 7) g_mode = MODE_CLOZE_STATS;
         else {
             g_cloze_group = g_cloze_menu_sel;
+            g_cloze_idx = 0;
             g_cloze_list_sel = 0;
             g_mode = MODE_CLOZE_LIST;
         }
@@ -4939,6 +4942,7 @@ static void drawClozeList() {
 static void handleClozeList() {
     int count = cloze_group_count(g_cloze_group);
     if (count > 0) {
+        if (g_cloze_list_sel >= count) g_cloze_list_sel = count - 1;
         if (in.up && !prevIn.up) g_cloze_list_sel = (g_cloze_list_sel + count - 1) % count;
         if (in.down && !prevIn.down) g_cloze_list_sel = (g_cloze_list_sel + 1) % count;
         if (in.k3 && !prevIn.k3) cloze_enter_card(g_cloze_group, g_cloze_list_sel);
@@ -5085,7 +5089,12 @@ static void handleWordInput() {
         if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; }
         if (in.k1 && !prevIn.k1) cloze_switch(-1);
         if (in.k2 && !prevIn.k2) cloze_switch(1);
-        if (in.k4 && !prevIn.k4) { cloze_exit_card(); g_mode = MODE_CLOZE_LIST; g_word_reveal = false; g_cloze_page = 0; }
+        if (in.k4 && !prevIn.k4) {
+            cloze_exit_card();
+            g_cloze_list_sel = g_cloze_idx;
+            g_mode = (g_cloze_group == 0) ? MODE_CLOZE_MENU : MODE_CLOZE_LIST;
+            g_word_reveal = false; g_cloze_page = 0;
+        }
         prevIn = in;
         return;
     }
@@ -8510,7 +8519,12 @@ static void goBack() {
     if (g_mode == MODE_CLOZE_LIST) { g_mode = MODE_CLOZE_MENU; return; }
     if (g_mode == MODE_CLOZE_MENU) { g_mode = MODE_WORD_MENU; return; }
     if (g_mode == MODE_WORD) {
-        if (g_word_level == 4) { cloze_exit_card(); g_mode = MODE_CLOZE_LIST; return; }
+        if (g_word_level == 4) {
+            cloze_exit_card();
+            g_cloze_list_sel = g_cloze_idx;
+            g_mode = (g_cloze_group == 0) ? MODE_CLOZE_MENU : MODE_CLOZE_LIST;
+            return;
+        }
         g_mode = MODE_WORD_MENU; return;
     }
     if (g_mode == MODE_WORD_MENU) { g_mode = MODE_MENU; return; }
