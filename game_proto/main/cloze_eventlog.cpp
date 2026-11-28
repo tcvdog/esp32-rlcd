@@ -32,6 +32,13 @@ void set_user(int user) {
     seq = 0;
 }
 
+void clear_user(int user) {
+    if (user < 1) return;
+    char p[48];
+    snprintf(p, sizeof(p), "/sdcard/cloze_events_u%d.jsonl", user);
+    remove(p);
+}
+
 void begin(const char *clock) {
     if (session) return;
     session = (uint32_t)(esp_timer_get_time() / 1000) ^ esp_random();

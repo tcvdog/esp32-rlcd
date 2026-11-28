@@ -3179,7 +3179,8 @@ static void uiDrawFrame() {
         uiBottomKey(150, "K4", "BACK");
     } else if (g_mode == MODE_USER_SELECT) {
         uiBottomKey(6, "JOY", "MOVE");
-        uiBottomKey(160, "K3", "ENTER");
+        uiBottomKey(150, "K3", "ENTER");
+        uiBottomKey(300, "K4", "CANCEL");
     } else if (g_mode == MODE_WORD_MENU) {
         uiBottomKey(6, "JOY", "MOVE");
         uiBottomKey(150, "K3", "OPEN");
@@ -4287,6 +4288,8 @@ static void drawUserSelect() {
     ui::topBar("SYS // USER", st);
     ui::setInk(ui::Ink::Black);
     ui::label16(12, 48, "选择学习者");
+    char cu[16]; snprintf(cu, sizeof(cu), "当前%s", g_user_names[g_user]);
+    ui::label12(286, 48, cu);
     ui::mono(150, 47, "WHO IS LEARNING");
     u8g2_DrawHLine(g, 8, 56, 384);
     for (int i = 0; i < 3; ++i) {
@@ -4306,6 +4309,7 @@ static void handleUserSelect() {
     if (in.up && !prevIn.up) g_user_sel = (g_user_sel + 2) % 3;
     if (in.down && !prevIn.down) g_user_sel = (g_user_sel + 1) % 3;
     if (in.k3 && !prevIn.k3) select_user(g_user_sel);
+    if (in.k4 && !prevIn.k4) g_mode = MODE_MENU;
     prevIn = in;
 }
 
@@ -4324,7 +4328,8 @@ static void drawMenu() {
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 46, "控制台");
     ui::mono(76, 45, "MAIN // MODULES");
-    ui::mono(334, 45, "06");
+    ui::label12(240, 45, g_user_names[g_user]);
+    ui::mono(340, 45, "06");
     u8g2_DrawHLine(g, 8, 52, 384);
     for (int x = 12; x < 392; x += 20) u8g2_DrawLine(g, x, 49, x, 52);
 
@@ -4346,11 +4351,17 @@ static void drawMenu() {
     ui::bottomBar();
     ui::keycap(8, 279, "JOY", "MOVE");
     ui::keycap(116, 279, "K3", "OPEN");
-    ui::keycap(214, 279, "K4", "BACK");
+    ui::keycap(214, 279, "K4", "USER");
     ui::keycap(334, 279, "SW", "BACK");
 }
 
 static void handleMenuInput() {
+    if (in.k4 && !prevIn.k4) {
+        g_user_sel = g_user;
+        g_mode = MODE_USER_SELECT;
+        prevIn = in;
+        return;
+    }
     int row = g_menu_sel / 2, col = g_menu_sel % 2;
     if (in.down && !prevIn.down) row = (row + 1) % 3;
     if (in.up && !prevIn.up) row = (row + 2) % 3;
@@ -9604,6 +9615,49 @@ static void audio_probe_task(void *) {
 }
 #endif
 
+static void cleanup_extra_users_once() {
+    nvs_handle_t h;
+    bool clean = false;
+    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, "profiles_clean", &v) == ESP_OK && v == 1) clean = true;
+        nvs_close(h);
+    }
+    if (clean) return;
+    // 用户 0 = 测试，保留旧数据；只清空淘淘/乐乐。
+    cloze_progress::clear_user(1);
+    cloze_progress::clear_user(2);
+    cloze_stats::clear_user(1);
+    cloze_stats::clear_user(2);
+    cloze_eventlog::clear_user(1);
+    cloze_eventlog::clear_user(2);
+    if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "profiles_clean", 1);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static void cleanup_extra_files_once() {
+    nvs_handle_t h;
+    bool clean = false;
+    if (nvs_open("ui", NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, "profiles_clean_sd", &v) == ESP_OK && v == 1) clean = true;
+        nvs_close(h);
+    }
+    if (clean) return;
+    cloze_stats::clear_user(1);
+    cloze_stats::clear_user(2);
+    cloze_eventlog::clear_user(1);
+    cloze_eventlog::clear_user(2);
+    if (nvs_open("ui", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "profiles_clean_sd", 1);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 extern "C" void app_main(void) {
     ESP_LOGI(TAG, "stickman RLCD game proto");
 #if AUDIO_PROBE2
@@ -9617,10 +9671,14 @@ extern "C" void app_main(void) {
     // NVS and WiFi must be initialized before the UI task calls settings_load().
     g_ota_started = true;
     ota_start();
+    cleanup_extra_users_once();
     BaseType_t ok = xTaskCreatePinnedToCore(gameTask, "game", 16384, NULL, 4, NULL, 1);
     configASSERT(ok == pdPASS);
     sd_ensure();
-    if (g_sd_ok) cleanup_temp_files();
+    if (g_sd_ok) {
+        cleanup_temp_files();
+        cleanup_extra_files_once();
+    }
     g_cap_q = xQueueCreate(16, CAP_PATH_LEN);
     if (g_cap_q) {
         // Background VAD capture removed: only C+D manual recordings are uploaded.

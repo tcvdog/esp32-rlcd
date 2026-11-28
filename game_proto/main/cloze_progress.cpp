@@ -8,11 +8,15 @@ static ClozeProgressItem p[8][64];
 static bool loaded = false;
 static int activeUser = 0;
 
+static const char *ns_name_for(int user, char *ns, size_t n) {
+    if (user == 0) return "cloze_p";
+    snprintf(ns, n, "cloze_p%d", user);
+    return ns;
+}
+
 static const char *ns_name() {
     static char ns[10];
-    if (activeUser == 0) return "cloze_p";
-    snprintf(ns, sizeof(ns), "cloze_p%d", activeUser);
-    return ns;
+    return ns_name_for(activeUser, ns, sizeof(ns));
 }
 
 static void ensure() {
@@ -29,6 +33,22 @@ static void ensure() {
 }
 
 void load() { ensure(); }
+
+void clear_user(int user) {
+    if (user < 1) return; // user 0 keeps legacy data
+    char ns[12];
+    ns_name_for(user, ns, sizeof(ns));
+    nvs_handle_t h;
+    if (nvs_open(ns, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    if (activeUser == user) {
+        memset(p, 0, sizeof(p));
+        loaded = true;
+    }
+}
 
 void set_user(int user) {
     if (user < 0) user = 0;

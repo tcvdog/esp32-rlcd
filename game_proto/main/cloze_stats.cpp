@@ -9,11 +9,15 @@ static bool s_loaded = false;
 static int activeUser = 0;
 static char CSV[48] = "/sdcard/cloze_stats.csv";
 
+static const char *stats_ns_for(int user, char *ns, size_t n) {
+    if (user == 0) return "cloze";
+    snprintf(ns, n, "cloze%d", user);
+    return ns;
+}
+
 static const char *stats_ns() {
     static char ns[10];
-    if (activeUser == 0) return "cloze";
-    snprintf(ns, sizeof(ns), "cloze%d", activeUser);
-    return ns;
+    return stats_ns_for(activeUser, ns, sizeof(ns));
 }
 
 static void ensure_loaded() {
@@ -30,6 +34,25 @@ static void ensure_loaded() {
 }
 
 void load() { ensure_loaded(); }
+
+void clear_user(int user) {
+    if (user < 1) return;
+    char ns[12];
+    stats_ns_for(user, ns, sizeof(ns));
+    nvs_handle_t h;
+    if (nvs_open(ns, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    char csv[48];
+    snprintf(csv, sizeof(csv), "/sdcard/cloze_stats_u%d.csv", user);
+    remove(csv);
+    if (activeUser == user) {
+        memset(&s, 0, sizeof(s));
+        s_loaded = true;
+    }
+}
 
 void set_user(int user) {
     if (user < 0) user = 0;

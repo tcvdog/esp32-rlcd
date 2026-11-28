@@ -13,6 +13,7 @@ struct ClozeProgressItem {
 namespace cloze_progress {
 void load();
 void set_user(int user);
+void clear_user(int user);
 void save();
 void open(int group, int idx);
 void state(int group, int idx, int level, int page);
