@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "i2c_bsp.cpp" "codec_port.cpp" "dr_flac_impl.c" "ui_theme.cpp" "ui_audio.cpp" "cloze_stats.cpp" "cloze_progress.cpp"
+    SRCS "main.cpp" "i2c_bsp.cpp" "codec_port.cpp" "dr_flac_impl.c" "ui_theme.cpp" "ui_audio.cpp" "cloze_stats.cpp" "cloze_progress.cpp" "cloze_eventlog.cpp"
     REQUIRES
         esp_timer
         driver

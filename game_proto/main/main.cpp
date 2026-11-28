@@ -68,6 +68,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "chushi_font20.h"
 #include "cloze_stats.h"
 #include "cloze_progress.h"
+#include "cloze_eventlog.h"
 #include "cloze_content.h"
 #include "cloze_text.h"
 static const int POEM_COUNT = 198;
@@ -545,6 +546,10 @@ static bool g_cloze_active = false;
 static int g_cloze_stat_level = -1;
 static int g_cloze_stat_page = -1;
 static bool g_cloze_large = false;
+static char g_snap_orig[4096];
+static char g_snap_mask[4096];
+static int g_hint_tokens = 3;
+static uint32_t g_hint_page_ms = 0;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
@@ -2728,6 +2733,17 @@ static esp_err_t ota_cloze_csv_get(httpd_req_t *req) {
     return ESP_OK;
 }
 
+static esp_err_t ota_cloze_events_get(httpd_req_t *req) {
+    FILE *f = fopen("/sdcard/cloze_events.jsonl", "r");
+    if (!f) { httpd_resp_sendstr(req, "no cloze events yet"); return ESP_OK; }
+    char buf[512]; size_t n;
+    httpd_resp_set_type(req, "application/x-ndjson");
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) httpd_resp_send_chunk(req, buf, n);
+    fclose(f);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static esp_err_t ota_screen_get(httpd_req_t *req) {
     if (!g) {
         httpd_resp_sendstr(req, "display not ready");
@@ -3006,6 +3022,7 @@ static void ota_start(void) {
     httpd_uri_t feedback = { .uri = "/feedback", .method = HTTP_POST, .handler = ota_feedback_post, .user_ctx = NULL };
     httpd_uri_t screen = { .uri = "/screen.pbm", .method = HTTP_GET, .handler = ota_screen_get, .user_ctx = NULL };
     httpd_uri_t cloze_csv = { .uri = "/cloze_stats.csv", .method = HTTP_GET, .handler = ota_cloze_csv_get, .user_ctx = NULL };
+    httpd_uri_t cloze_events = { .uri = "/cloze_events.jsonl", .method = HTTP_GET, .handler = ota_cloze_events_get, .user_ctx = NULL };
     httpd_uri_t upd = { .uri = "/update", .method = HTTP_POST, .handler = ota_update_post, .user_ctx = NULL };
     httpd_uri_t note = { .uri = "/note", .method = HTTP_POST, .handler = ota_note_post, .user_ctx = NULL };
     httpd_register_uri_handler(server, &root);
@@ -3027,6 +3044,7 @@ static void ota_start(void) {
     httpd_register_uri_handler(server, &feedback);
     httpd_register_uri_handler(server, &screen);
     httpd_register_uri_handler(server, &cloze_csv);
+    httpd_register_uri_handler(server, &cloze_events);
     httpd_register_uri_handler(server, &upd);
     httpd_register_uri_handler(server, &note);
     ESP_LOGI(TAG, "OTA AP STICKMAN-RLCD / stickman123 / 192.168.4.1, STA YOUR_WIFI_SSID");
@@ -4927,13 +4945,15 @@ static void drawClozeTextCard(const ClozeText &t) {
         if (g_cloze_level == 6) mask = cloze_random_mask(t, g_cloze_page);
         else mask = t.levels[g_cloze_level - 1];
     }
+    snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", t.original ? t.original : "");
+    snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", mask ? mask : (t.original ? t.original : ""));
     draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
-    snprintf(hint, sizeof(hint), "%s换篇 / 调级 / 翻页   %s",
+    snprintf(hint, sizeof(hint), "%s换篇 / 调级 / 翻页   %s   提示%d",
              t.alt ? "非课本获取 · " : "",
              g_word_reveal ? "原文 K3 返回镂空" :
-             (g_cloze_level == 6 ? "随机镂空 K3 显示原文" : "镂空遮挡 K3 显示原文"));
+             (g_cloze_level == 6 ? "随机镂空 K3 显示原文" : "镂空遮挡 K3 显示原文"), g_hint_tokens);
     ui::label12(14, 264, hint);
 }
 
@@ -4981,6 +5001,22 @@ static const char *cloze_title() {
     return p ? p->title : "诗词";
 }
 
+static void cloze_event(const char *event, const char *button) {
+    if (g_cloze_level != 6) {
+        const ClozeText *t = cloze_text_for(g_cloze_group, g_cloze_idx);
+        if (t) {
+            snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", t->original ? t->original : "");
+            snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", t->levels[g_cloze_level - 1]);
+        } else if (g_cloze_group <= 0) {
+            snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", CHUSHI_ORIGINAL);
+            snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", CHUSHI_LEVELS[g_cloze_level - 1]);
+        }
+    }
+    cloze_eventlog::log(g_clock, event, button, cloze_group_name(g_cloze_group),
+                        cloze_title(), g_cloze_level, g_cloze_page, g_hint_tokens,
+                        g_snap_orig, g_snap_mask);
+}
+
 static void cloze_append(const char *event) {
     cloze_stats::appendEvent(g_clock, event, cloze_group_name(g_cloze_group),
                              cloze_title(), g_cloze_level, g_cloze_page);
@@ -5000,10 +5036,22 @@ static void cloze_enter_card(int group, int idx) {
     g_mode = MODE_WORD;
     g_random_owner = nullptr;
     g_random_page = -1;
+    cloze_eventlog::begin(g_clock);
+    g_hint_tokens = 3;
+    g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    const ClozeText *entry = cloze_text_for(group, idx);
+    if (entry) {
+        snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", entry->original ? entry->original : "");
+        snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", entry->levels[g_cloze_level - 1]);
+    } else if (group <= 0) {
+        snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", CHUSHI_ORIGINAL);
+        snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", CHUSHI_LEVELS[g_cloze_level - 1]);
+    }
     cloze_progress::open(group, idx);
     cloze_progress::state(group, idx, g_cloze_level, 0);
     cloze_stats::enter(g_cloze_level);
     cloze_append("enter");
+    cloze_event("enter", "K3");
 }
 
 static void cloze_exit_card() {
@@ -5012,6 +5060,7 @@ static void cloze_exit_card() {
     cloze_progress::save();
     cloze_stats::exitSession();
     cloze_append("exit");
+    cloze_event("exit", "K4");
     g_cloze_active = false;
 }
 
@@ -5033,8 +5082,11 @@ static void cloze_switch(int delta) {
     g_cloze_stat_page = -1;
     cloze_progress::open(g_cloze_group, g_cloze_idx);
     cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0);
+    g_hint_tokens = 3;
+    g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
     cloze_stats::enter(g_cloze_level);
     cloze_append("enter");
+    cloze_event("enter", "K1/K2");
 }
 
 static void cloze_note_page(int level, int page) {
@@ -5296,17 +5348,32 @@ static void handleWordInput() {
         if (in.k3 && !prevIn.k3) {
             uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
             if (now - last_k3_ms > 180) {
-                g_word_reveal = !g_word_reveal;
-                g_word_force_blank = true;
-                cloze_stats::toggleAnswer();
-                cloze_append(g_word_reveal ? "answer_on" : "answer_off");
+                if (!g_word_reveal) {
+                    if (g_hint_tokens <= 0) {
+                        cloze_event("reveal_denied", "K3");
+                    } else if (now - g_hint_page_ms < 3000) {
+                        cloze_event("reveal_early", "K3");
+                    } else {
+                        --g_hint_tokens;
+                        g_word_reveal = true;
+                        g_word_force_blank = true;
+                        cloze_stats::toggleAnswer();
+                        cloze_append("answer_on");
+                        cloze_event("reveal_on", "K3");
+                    }
+                } else {
+                    g_word_reveal = false;
+                    g_word_force_blank = true;
+                    cloze_append("answer_off");
+                    cloze_event("reveal_off", "K3");
+                }
                 last_k3_ms = now;
             }
         }
-        if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 6 ? 1 : g_cloze_level + 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); }
-        if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 6 : g_cloze_level - 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); }
-        if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) --g_cloze_page; }
-        if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; }
+        if (in.up && !prevIn.up) { int old = g_cloze_level; g_cloze_level = g_cloze_level >= 6 ? 1 : g_cloze_level + 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); cloze_event("level_up", "JOY"); }
+        if (in.down && !prevIn.down) { int old = g_cloze_level; g_cloze_level = g_cloze_level <= 1 ? 6 : g_cloze_level - 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); cloze_event("level_down", "JOY"); }
+        if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) { --g_cloze_page; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_event("page_prev", "JOY"); } }
+        if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_event("page_next", "JOY"); }
         if (in.k1 && !prevIn.k1) cloze_switch(-1);
         if (in.k2 && !prevIn.k2) cloze_switch(1);
         if (in.k4 && !prevIn.k4) {
