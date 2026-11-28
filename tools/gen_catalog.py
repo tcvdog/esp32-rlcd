@@ -14,6 +14,15 @@ def parse_current():
         except Exception: continue
         out[m.group(1)]=txt
     return out
+FIX={
+"咏柳":("贺知章","碧玉妆成一树高，万条垂下绿丝绦。不知细叶谁裁出，二月春风似剪刀。"),
+"登鹳雀楼":("王之涣","白日依山尽，黄河入海流。欲穷千里目，更上一层楼。"),
+"春晓":("孟浩然","春眠不觉晓，处处闻啼鸟。夜来风雨声，花落知多少。"),
+"池上":("白居易","小娃撑小艇，偷采白莲回。不解藏踪迹，浮萍一道开。"),
+"山行":("杜牧","远上寒山石径斜，白云生处有人家。停车坐爱枫林晚，霜叶红于二月花。"),
+"绝句":("杜甫","迟日江山丽，春风花草香。泥融飞燕子，沙暖睡鸳鸯。"),
+"忆江南":("白居易","江南好，风景旧曾谙。日出江花红胜火，春来江水绿如蓝。能不忆江南？"),
+}
 CUR={
 "司马光":"群儿戏于庭，一儿登瓮，足跌没水中，众皆弃去，光持石击瓮破之，水迸，儿得活。",
 "守株待兔":"宋人有耕者。田中有株。兔走触株，折颈而死。因释其耒而守株，冀复得兔。兔不可复得，而身为宋国笑。",
@@ -50,6 +59,7 @@ ALIAS={
  '答司马谏议书':None,'子路、曾皙、冉有、公西华侍坐':None,'礼运（节选）':None,'长亭送别（节选）':None,
 }
 def find(title):
+    if title in FIX: return FIX[title][1], FIX[title][0], False
     if title in ALT: return ALT[title], '—', True
     if title in CUR: return CUR[title], '—', False
     if title in D: return D[title]['content'], D[title].get('writer',''), False
