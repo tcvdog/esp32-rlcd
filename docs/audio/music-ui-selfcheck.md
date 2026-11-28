@@ -1,7 +1,7 @@
-# 音乐播放器 UI 自检（v0.65.2）
+# 音乐播放器 UI 自检（v0.65.3）
 
 ## 改动
-- 新增 `ui_audio.h/.cpp`：单张大圆盘唱片机（含唱臂/唱头/支点）+ 右侧垂直声音瀑布。
+- 新增 `ui_audio.h/.cpp`：单张大圆盘唱片机（含盘外支点、配重、长唱臂、外圈唱头）+ 右侧垂直声音瀑布。
 - `ui_theme` 新增 `segmentedBar`、`levelMeter`、`dottedDivider`、`ui::g()`。
 - 音乐页顶栏：`[SYS // AUDIO // FLAC 16kHz]`。
 - 主内容：
@@ -32,7 +32,7 @@ C+D          保持全局录音优先
 - 无新增动态分配。
 
 ## 页面截图
-![音乐播放器](music-ui-v0652.png)
+![音乐播放器](music-ui-v0653.png)
 
 ## 未改
 - ES8311/ES7210、MP3/WAV/FLAC、SD、Wi-Fi、OTA、DSH、GPIO。

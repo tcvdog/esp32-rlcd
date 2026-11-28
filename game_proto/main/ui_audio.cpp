@@ -88,27 +88,48 @@ void draw(u8g2_t *g, const View &v) {
     ui::setInk(ui::Ink::Black);
     u8g2_DrawDisc(g, cx, cy, 3, U8G2_DRAW_ALL);
 
-    // Tonearm: pivot at upper-right, arm crosses the disc, cartridge on outer groove.
-    int px = wx + 116, pyy = wy + 26;
-    int ex = cx + 28, ey = cy - 16;
-    contrastLine(px, pyy, ex, ey);
+    // Long S-curved tonearm: pivot upper-right, arm bends across the grooves,
+    // angled headshell stays inside the disc.
+    int px = wx + 120, pivotY = wy + 32;
+    int ax1 = wx + 104, ay1 = wy + 44;
+    int ax2 = wx + 82,  ay2 = wy + 54;
+    int ax3 = wx + 58,  ay3 = wy + 70;
+    int hx = wx + 28,  hy = wy + 78;
+
+    // Counterweight behind the pivot.
     ui::setInk(ui::Ink::Black);
-    u8g2_DrawDisc(g, px, pyy, 6, U8G2_DRAW_ALL);
+    u8g2_DrawBox(g, px + 3, pivotY - 3, 9, 7);
     ui::setInk(ui::Ink::White);
-    u8g2_DrawDisc(g, px, pyy, 3, U8G2_DRAW_ALL);
+    u8g2_DrawBox(g, px + 5, pivotY - 1, 5, 3);
     ui::setInk(ui::Ink::Black);
-    u8g2_DrawBox(g, ex - 4, ey - 3, 9, 7);
+
+    // Black-outline / white-core arm, with visible bends.
+    contrastLine(px, pivotY, ax1, ay1);
+    contrastLine(ax1, ay1, ax2, ay2);
+    contrastLine(ax2, ay2, ax3, ay3);
+    contrastLine(ax3, ay3, hx, hy);
+
+    // Pivot bearing.
+    ui::setInk(ui::Ink::Black);
+    u8g2_DrawDisc(g, px, pivotY, 7, U8G2_DRAW_ALL);
     ui::setInk(ui::Ink::White);
-    u8g2_DrawBox(g, ex - 2, ey - 1, 5, 3);
+    u8g2_DrawDisc(g, px, pivotY, 3, U8G2_DRAW_ALL);
     ui::setInk(ui::Ink::Black);
-    u8g2_DrawLine(g, ex + 5, ey, ex + 9, ey + 4);
+
+    // Headshell: white body + black outline, visible on both surfaces.
+    ui::setInk(ui::Ink::White);
+    u8g2_DrawBox(g, hx - 4, hy - 3, 11, 7);
+    ui::setInk(ui::Ink::Black);
+    u8g2_DrawFrame(g, hx - 4, hy - 3, 11, 7);
+    u8g2_DrawLine(g, hx + 6, hy + 1, hx + 10, hy + 5);
+    contrastLine(hx + 7, hy + 4, hx + 12, hy + 10);
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, wx + 8, wy + 20, "SIDE A");
     u8g2_DrawStr(g, wx + 8, wy + 154, "16k OUT");
     u8g2_DrawStr(g, wx + 8, wy + 180, v.format ? v.format : "---");
-    if (v.running) u8g2_DrawDisc(g, wx + 116, wy + 20, 3, U8G2_DRAW_ALL);
-    else u8g2_DrawCircle(g, wx + 116, wy + 20, 3, U8G2_DRAW_ALL);
+    if (v.running) u8g2_DrawDisc(g, wx + 112, wy + 18, 3, U8G2_DRAW_ALL);
+    else u8g2_DrawCircle(g, wx + 112, wy + 18, 3, U8G2_DRAW_ALL);
 
     // Right: track, title, time, waterfall.
     const int rx = 148, ry = 32, rw = 244, rh = 188;
