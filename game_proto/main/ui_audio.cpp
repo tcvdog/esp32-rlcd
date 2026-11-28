@@ -54,6 +54,17 @@ static void drawWaterfall(int x, int y, int w, int h) {
     }
 }
 
+static void contrastLine(int x0, int y0, int x1, int y1) {
+    // Black outline + white core: visible on both white panel and black disc.
+    ui::setInk(ui::Ink::Black);
+    for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -1; dy <= 1; ++dy)
+            u8g2_DrawLine(ui::g(), x0 + dx, y0 + dy, x1 + dx, y1 + dy);
+    ui::setInk(ui::Ink::White);
+    u8g2_DrawLine(ui::g(), x0, y0, x1, y1);
+    ui::setInk(ui::Ink::Black);
+}
+
 void draw(u8g2_t *g, const View &v) {
     ui::begin(g);
     ui::setInk(ui::Ink::Black);
@@ -76,6 +87,21 @@ void draw(u8g2_t *g, const View &v) {
     u8g2_DrawLine(g, cx, cy, mx, my);
     ui::setInk(ui::Ink::Black);
     u8g2_DrawDisc(g, cx, cy, 3, U8G2_DRAW_ALL);
+
+    // Tonearm: pivot at upper-right, arm crosses the disc, cartridge on outer groove.
+    int px = wx + 116, pyy = wy + 26;
+    int ex = cx + 28, ey = cy - 16;
+    contrastLine(px, pyy, ex, ey);
+    ui::setInk(ui::Ink::Black);
+    u8g2_DrawDisc(g, px, pyy, 6, U8G2_DRAW_ALL);
+    ui::setInk(ui::Ink::White);
+    u8g2_DrawDisc(g, px, pyy, 3, U8G2_DRAW_ALL);
+    ui::setInk(ui::Ink::Black);
+    u8g2_DrawBox(g, ex - 4, ey - 3, 9, 7);
+    ui::setInk(ui::Ink::White);
+    u8g2_DrawBox(g, ex - 2, ey - 1, 5, 3);
+    ui::setInk(ui::Ink::Black);
+    u8g2_DrawLine(g, ex + 5, ey, ex + 9, ey + 4);
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, wx + 8, wy + 20, "SIDE A");
