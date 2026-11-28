@@ -4552,7 +4552,7 @@ static void cloze_glyph_draw(int x, int yTop, uint32_t cp) {
     if (!g) return;
     u8g2_SetBitmapMode(ui::g(), 1);
     u8g2_SetDrawColor(ui::g(), 1);
-    u8g2_DrawXBMP(ui::g(), x, yTop, g->w, g->h, CLOZE_GLYPH_BITS + g->off);
+    u8g2_DrawXBMP(ui::g(), x, yTop + g->yoff, g->w, g->h, CLOZE_GLYPH_BITS + g->off);
     u8g2_SetBitmapMode(ui::g(), 0);
 }
 
