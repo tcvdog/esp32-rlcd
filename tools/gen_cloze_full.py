@@ -99,6 +99,18 @@ middle_class_all=parse_cards('game_proto/main/poem_cards.h',['CLASSICAL_CARDS'])
 high_poems_all=parse_cards('game_proto/main/poem_cards.h',['HIGH_POEMS'])
 high_class_all=parse_cards('game_proto/main/poem_cards.h',['HIGH_CLASSICAL'])
 # Build group arrays
+def poem_with_punct(title, lines):
+    orig = FULL.get(title)
+    if orig is not None:
+        return orig
+    # Four-line textbook quatrains: comma on line 1/3, period on 2/4.
+    if len(lines) == 4 and not any(ch in ''.join(lines) for ch in '，。！？；：'):
+        out = []
+        for i, line in enumerate(lines):
+            out.append(line + ('，' if i % 2 == 0 else '。'))
+        return '\n'.join(out)
+    return '\n'.join(lines)
+
 def group(name, items):
     out=[f'static const ClozeText {name}[] = {{']
     for title,author,lines in items:
@@ -162,10 +174,10 @@ primary_poems=poem_cards[:8]; primary_class=primary_class_all; middle_poems=poem
 # verify counts/titles
 print('groups',len(primary_poems),len(primary_class),len(middle_poems),len(middle_class),len(high_poems),len(high_class))
 hdr='#pragma once\n\n// Generated full-text 5-level cloze data. Whole-word masks.\n\nstruct ClozeText { const char *title; const char *author; const char *original; const char *levels[5]; };\n\n'
-for nm,items in [('CLOZE_PRIMARY_POEMS',primary_poems),('CLOZE_PRIMARY_CLASSICAL',primary_class),('CLOZE_MIDDLE_POEMS',middle_poems),('CLOZE_MIDDLE_CLASSICAL',middle_class),('CLOZE_HIGH_POEMS',high_poems),('CLOZE_HIGH_CLASSICAL',high_class)]:
+for nm,items,is_poem in [('CLOZE_PRIMARY_POEMS',primary_poems,True),('CLOZE_PRIMARY_CLASSICAL',primary_class,False),('CLOZE_MIDDLE_POEMS',middle_poems,True),('CLOZE_MIDDLE_CLASSICAL',middle_class,False),('CLOZE_HIGH_POEMS',high_poems,True),('CLOZE_HIGH_CLASSICAL',high_class,False)]:
     hdr += f'static const ClozeText {nm}[] = {{\n'
     for title,author,lines in items:
-        orig=FULL.get(title,'\n'.join(lines)); levels=masks(orig)
+        orig = poem_with_punct(title,lines) if is_poem else FULL.get(title,'\n'.join(lines)); levels=masks(orig)
         hdr += '    {'+json.dumps(title,ensure_ascii=False)+', '+json.dumps(author,ensure_ascii=False)+', '+json.dumps(orig,ensure_ascii=False)+', {\n'
         hdr += '        '+',\n        '.join(json.dumps(x,ensure_ascii=False) for x in levels)+'\n    }},\n'
     hdr += '};\n\n'
