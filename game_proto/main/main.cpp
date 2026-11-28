@@ -551,6 +551,8 @@ static int g_cloze_stat_page = -1;
 static bool g_cloze_large = false;
 static char g_toast_text[64];
 static uint32_t g_toast_until = 0;
+static uint32_t g_score_badge_until = 0;
+static int g_badge_level = 1, g_badge_base = 0, g_badge_penalty = 0, g_badge_net = 0;
 static char g_snap_orig[4096];
 static char g_snap_mask[4096];
 static int g_hint_tokens = 3;
@@ -3226,11 +3228,46 @@ static void draw_toast() {
     ui::label12(x + 14, 128, g_toast_text);
 }
 
+static void show_score_badge(int level, int base, int penalty, int net) {
+    g_badge_level = level; g_badge_base = base; g_badge_penalty = penalty; g_badge_net = net;
+    g_score_badge_until = (uint32_t)(esp_timer_get_time() / 1000) + 2500;
+}
+
+static void draw_score_badge() {
+    if (!g_score_badge_until) return;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if (now >= g_score_badge_until) return;
+    const int cx = 200, cy = 150, r = 78;
+    ui::setInk(ui::Ink::White);
+    u8g2_DrawDisc(ui::g(), cx, cy, r + 7, U8G2_DRAW_ALL);
+    ui::setInk(ui::Ink::Black);
+    int px = 0, py = 0;
+    for (int deg = 0; deg <= 360; deg += 3) {
+        float rad = deg * 3.14159265f / 180.0f;
+        int rr = r + (int)(5.0f * sinf(rad * 6.0f));
+        int x = cx + (int)(cosf(rad) * rr);
+        int y = cy + (int)(sinf(rad) * rr);
+        if (deg) u8g2_DrawLine(ui::g(), px, py, x, y);
+        px = x; py = y;
+    }
+    char t[32], a[32], b[32], n[32];
+    snprintf(t, sizeof(t), "L%d 通过", g_badge_level);
+    snprintf(a, sizeof(a), "背诵得分 +%d", g_badge_base);
+    snprintf(b, sizeof(b), "提示减分 -%d", g_badge_penalty);
+    snprintf(n, sizeof(n), "净分 +%d", g_badge_net);
+    ui::setInk(ui::Ink::Black);
+    ui::label16(cx - ui::textWidth16(t) / 2, 125, t);
+    ui::label12(cx - ui::textWidth12(a) / 2, 151, a);
+    ui::label12(cx - ui::textWidth12(b) / 2, 171, b);
+    ui::label16(cx - ui::textWidth16(n) / 2, 201, n);
+}
+
 static void presentFrame() {
     if (g_cmd_recording || g_cmd_busy) drawCmdOverlay();
     uiDrawFrame();
     if (!g_ui_frame || g_mode == MODE_MENU || g_mode == MODE_VIDEO || g_mode == MODE_IMAGE) drawBackButton();
     draw_toast();
+    draw_score_badge();
     uint8_t *fb = u8g2_GetBufferPtr(g);
     if (fb && !g_no_invert) {
         size_t fbBytes = (size_t)u8g2_GetBufferTileWidth(g) *
@@ -5157,9 +5194,7 @@ static void cloze_award_level(int level) {
     int net = delta - penalty;
     cloze_progress::add_score(g_cloze_group, g_cloze_idx, delta);
     int total = cloze_progress::total_score();
-    char msg[80];
-    snprintf(msg, sizeof(msg), "L%d通过 +%d -%d = %+d分", level, delta, penalty, net);
-    show_toast(msg);
+    show_score_badge(level, delta, penalty, net);
     cloze_event("level_score", "JOY");
     cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
                           level, delta, total, g_level_reveals);
