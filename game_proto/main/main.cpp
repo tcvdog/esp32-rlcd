@@ -2363,7 +2363,7 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
                 if (httpd_query_key_value(q, "group", qg, sizeof(qg)) == ESP_OK) {
                     g_cloze_group = atoi(qg);
                     if (g_cloze_group < 1) g_cloze_group = 1;
-                    if (g_cloze_group > 3) g_cloze_group = 3;
+                    if (g_cloze_group > 6) g_cloze_group = 6;
                     if (httpd_query_key_value(q, "list", ql, sizeof(ql)) == ESP_OK && atoi(ql))
                         g_mode = MODE_CLOZE_LIST;
                     char qc[8] = {0};
@@ -4727,10 +4727,15 @@ static void cloze_note_page(int level, int page);
 static const char *cloze_group_name(int group);
 
 static const ClozeText *cloze_text_for(int group, int idx) {
-    if (group == 1 && idx >= 0 && idx < 8) return &CLOZE_PRIMARY[idx];
-    if (group == 2 && idx >= 0 && idx < 6) return &CLOZE_MIDDLE[idx];
-    if (group == 3 && idx >= 0 && idx < 6) return &CLOZE_CLASSICAL[idx];
-    return nullptr;
+    switch (group) {
+        case 1: return (idx >= 0 && idx < 8) ? &CLOZE_PRIMARY_POEMS[idx] : nullptr;
+        case 2: return (idx >= 0 && idx < 2) ? &CLOZE_PRIMARY_CLASSICAL[idx] : nullptr;
+        case 3: return (idx >= 0 && idx < 6) ? &CLOZE_MIDDLE_POEMS[idx] : nullptr;
+        case 4: return (idx >= 0 && idx < 6) ? &CLOZE_MIDDLE_CLASSICAL[idx] : nullptr;
+        case 5: return (idx >= 0 && idx < 6) ? &CLOZE_HIGH_POEMS[idx] : nullptr;
+        case 6: return (idx >= 0 && idx < 6) ? &CLOZE_HIGH_CLASSICAL[idx] : nullptr;
+        default: return nullptr;
+    }
 }
 
 static void drawClozeTextCard(const ClozeText &t) {
@@ -4849,29 +4854,42 @@ static void drawClozeMenu() {
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 42, "诗词古文");
     ui::mono(112, 41, "CLOZE // CONTENT");
-    ui::mono(340, 41, "05");
+    ui::mono(340, 41, "08");
     u8g2_DrawHLine(g, 8, 48, 384);
-    const char *names[5] = { "出师表", "小学古诗词", "初中古诗词", "文言文", "学习统计" };
-    const char *subs[5] = { "长篇 · 5 级镂空", "08 首 · 词级遮挡", "06 首 · 词级遮挡", "06 篇 · 文言文", "进入/退出/页面" };
-    const int ys[5] = { 58, 96, 134, 172, 210 };
-    for (int i = 0; i < 5; ++i) {
-        int y = ys[i];
+    const char *names[7] = {
+        "出师表", "小学古诗", "小学文言文", "初中古诗",
+        "初中文言文", "高中古诗", "高中文言文"
+    };
+    const char *subs[7] = {
+        "长篇 · 5 级镂空", "08 首", "02 篇", "06 首",
+        "06 篇", "06 首", "06 篇"
+    };
+    for (int i = 0; i < 7; ++i) {
+        int y = 56 + i * 27;
         bool sel = (i == g_cloze_menu_sel);
-        ui::card(10, y, 380, 32, sel);
+        ui::card(10, y, 380, 24, sel);
         char num[4]; snprintf(num, sizeof(num), "%02d", i + 1);
-        ui::mono(20, y + 20, num);
-        ui::label16(62, y + 22, names[i]);
-        ui::label12(230, y + 22, subs[i]);
+        ui::mono(20, y + 17, num);
+        ui::label16(62, y + 18, names[i]);
+        ui::label12(270, y + 18, subs[i]);
         ui::setInk(ui::Ink::Black);
     }
+    // Stats remains reachable as the 8th row; use a compact final row.
+    int y = 56 + 7 * 27;
+    bool sel = (g_cloze_menu_sel == 7);
+    ui::card(10, y, 380, 24, sel);
+    ui::mono(20, y + 17, "08");
+    ui::label16(62, y + 18, "学习统计");
+    ui::label12(270, y + 18, "进入/退出/页面");
+    ui::setInk(ui::Ink::Black);
 }
 
 static void handleClozeMenu() {
-    if (in.up && !prevIn.up) g_cloze_menu_sel = (g_cloze_menu_sel + 4) % 5;
-    if (in.down && !prevIn.down) g_cloze_menu_sel = (g_cloze_menu_sel + 1) % 5;
+    if (in.up && !prevIn.up) g_cloze_menu_sel = (g_cloze_menu_sel + 7) % 8;
+    if (in.down && !prevIn.down) g_cloze_menu_sel = (g_cloze_menu_sel + 1) % 8;
     if (in.k3 && !prevIn.k3) {
         if (g_cloze_menu_sel == 0) cloze_enter_card(0, 0);
-        else if (g_cloze_menu_sel == 4) g_mode = MODE_CLOZE_STATS;
+        else if (g_cloze_menu_sel == 7) g_mode = MODE_CLOZE_STATS;
         else {
             g_cloze_group = g_cloze_menu_sel;
             g_cloze_list_sel = 0;

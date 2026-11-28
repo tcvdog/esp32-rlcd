@@ -8,10 +8,12 @@ struct ClozeGroup {
     int count;
 };
 
-// Primary: first 8 of POEM_CARDS. Middle: last 6 (including extras).
 static const ClozeGroup CLOZE_GROUPS[] = {
-    {"小学古诗词", "08 首", &POEM_CARDS[0], 8},
-    {"初中古诗词", "06 首", &POEM_CARDS[8], 6},
-    {"文言文", "06 篇", CLASSICAL_CARDS, 6},
+    {"小学古诗", "08 首", &POEM_CARDS[0], 8},
+    {"小学文言文", "02 篇", PRIMARY_CLASSICAL, 2},
+    {"初中古诗", "06 首", &POEM_CARDS[8], 6},
+    {"初中文言文", "06 篇", CLASSICAL_CARDS, 6},
+    {"高中古诗", "06 首", HIGH_POEMS, 6},
+    {"高中文言文", "06 篇", HIGH_CLASSICAL, 6},
 };
-static const int CLOZE_GROUP_COUNT = 3;
+static const int CLOZE_GROUP_COUNT = 6;
