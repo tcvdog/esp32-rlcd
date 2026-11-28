@@ -91,10 +91,10 @@ void draw(u8g2_t *g, const View &v) {
     // Long S-curved tonearm: pivot upper-right, arm bends across the grooves,
     // angled headshell stays inside the disc.
     int px = wx + 120, pivotY = wy + 32;
-    int ax1 = wx + 104, ay1 = wy + 44;
-    int ax2 = wx + 82,  ay2 = wy + 54;
-    int ax3 = wx + 58,  ay3 = wy + 70;
-    int hx = wx + 28,  hy = wy + 78;
+    int ax1 = wx + 114, ay1 = wy + 56;
+    int ax2 = wx + 108, ay2 = wy + 80;
+    int ax3 = wx + 104, ay3 = wy + 102;
+    int hx = wx + 102,  hy = wy + 116;
 
     // Counterweight behind the pivot.
     ui::setInk(ui::Ink::Black);
@@ -121,8 +121,8 @@ void draw(u8g2_t *g, const View &v) {
     u8g2_DrawBox(g, hx - 4, hy - 3, 11, 7);
     ui::setInk(ui::Ink::Black);
     u8g2_DrawFrame(g, hx - 4, hy - 3, 11, 7);
-    u8g2_DrawLine(g, hx + 6, hy + 1, hx + 10, hy + 5);
-    contrastLine(hx + 7, hy + 4, hx + 12, hy + 10);
+    u8g2_DrawLine(g, hx - 6, hy + 1, hx - 10, hy + 5);
+    contrastLine(hx - 7, hy + 4, hx - 13, hy + 10);
 
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, wx + 8, wy + 20, "SIDE A");
