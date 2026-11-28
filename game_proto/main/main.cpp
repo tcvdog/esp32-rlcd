@@ -4600,17 +4600,85 @@ static void draw_wrapped_english(const char *s, int x, int y, int maxw, int line
     if (line[0] && lines < maxlines) u8g2_DrawStr(g, x, y + lines * lineh, line);
 }
 
-static int poem_page_count(const char *text, int maxw, int maxLines) {
-    if (!text || !*text) return 1;
-    int lines = 1, chars = 0;
-    for (const char *p = text; *p; ) {
-        if (*p == '\n') { ++lines; chars = 0; ++p; continue; }
-        int b = utf8_len((unsigned char)*p);
-        if (chars >= (g_cloze_large ? 15 : 18)) { ++lines; chars = 0; }
-        ++chars;
-        p += b;
+struct ClozeLineSpan { const char *s; const char *e; int chars; };
+
+static bool cloze_clause_end(uint32_t cp) {
+    return cp == 0x3002 || cp == 0xFF0C || cp == 0xFF1B || cp == 0xFF1A ||
+           cp == 0xFF01 || cp == 0xFF1F || cp == 0x3001;
+}
+
+static uint32_t utf8_code(const char *p, int *adv);
+
+// Poetry: two clauses per line when both fit; otherwise one clause per line.
+// Every clause carries its trailing punctuation.
+static int build_cloze_lines(const char *text, int maxChars, ClozeLineSpan *out, int cap) {
+    if (!text || !*text || cap <= 0) return 0;
+    int n = 0;
+    const char *p = text;
+    if (!g_cloze_large) {
+        while (*p && n < cap) {
+            if (*p == '\n') { ++p; continue; }
+            const char *s0 = p; int chars = 0;
+            while (*p && *p != '\n' && chars < maxChars) {
+                int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
+            }
+            if (chars > 0) out[n++] = {s0, p, chars};
+            if (*p == '\n') ++p;
+        }
+        return n;
     }
-    return (lines + maxLines - 1) / maxLines;
+    while (*p && n < cap) {
+        if (*p == '\n') { ++p; continue; }
+        const char *curS = p;
+        int curChars = 0, curClauses = 0;
+        while (*p && *p != '\n' && n < cap) {
+            const char *cs = p;
+            int cchars = 0;
+            while (*p && *p != '\n') {
+                int adv = 1; uint32_t cp = utf8_code(p, &adv);
+                p += adv; ++cchars;
+                if (cloze_clause_end(cp)) break;
+            }
+            // Very long clause: split by character budget.
+            while (cchars > maxChars) {
+                if (curChars > 0) {
+                    out[n++] = {curS, cs, curChars};
+                    if (n >= cap) break;
+                    curChars = 0; curClauses = 0;
+                }
+                const char *q = cs; int got = 0;
+                while (*q && *q != '\n' && got < maxChars) {
+                    int adv = 1; utf8_code(q, &adv); q += adv; ++got;
+                }
+                out[n++] = {cs, q, got};
+                if (n >= cap) break;
+                cchars -= got; cs = q;
+            }
+            if (n >= cap) break;
+            if (cchars <= 0) continue;
+            if (curChars == 0) {
+                curS = cs; curChars = cchars; curClauses = 1;
+            } else if (curClauses < 2 && curChars + cchars <= maxChars) {
+                curChars += cchars; ++curClauses;
+            } else {
+                out[n++] = {curS, cs, curChars};
+                if (n >= cap) break;
+                curS = cs; curChars = cchars; curClauses = 1;
+            }
+        }
+        if (n < cap && curChars > 0) out[n++] = {curS, p, curChars};
+        if (*p == '\n') ++p;
+    }
+    return n;
+}
+
+static int poem_page_count(const char *text, int maxw, int maxLines) {
+    (void)maxw;
+    if (!text || !*text) return 1;
+    ClozeLineSpan lines[256];
+    int n = build_cloze_lines(text, g_cloze_large ? 15 : 18, lines, 256);
+    if (n < 1) n = 1;
+    return (n + maxLines - 1) / maxLines;
 }
 
 static const ClozeGlyph *cloze_glyph(uint32_t cp) {
@@ -4677,21 +4745,11 @@ static void draw_cloze_page(const char *text, int page, int x, int y, int lineh,
 }
 
 static int cloze_page_lines(const char *text, int page, int charsPerLine) {
-    if (!text) return 0;
-    int line = 0, inPage = 0;
-    const char *p = text;
-    while (*p) {
-        int chars = 0;
-        while (*p && *p != '\n' && chars < charsPerLine) {
-            int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
-        }
-        if (line >= page * 5 && line < (page + 1) * 5) ++inPage;
-        ++line;
-        if (*p == '\n') ++p;
-        else if (chars == 0) ++p;
-        if (line >= (page + 1) * 5) break;
-    }
-    return inPage;
+    ClozeLineSpan lines[256];
+    int n = build_cloze_lines(text, charsPerLine, lines, 256);
+    int shown = 0;
+    for (int i = page * 5; i < n && i < (page + 1) * 5; ++i) ++shown;
+    return shown;
 }
 
 static int cloze_line_width(const char *s, const char *end) {
@@ -4707,49 +4765,39 @@ static int cloze_line_width(const char *s, const char *end) {
 static void draw_cloze_overlay(const char *text, const char *mask, int page,
                               int x, int y, int lineh, int maxLines) {
     if (!text) return;
-    int line = 0, shown = 0;
-    const char *p = text;
-    while (*p && line < (page + 1) * maxLines) {
-        const char *start = p;
-        int chars = 0;
-        while (*p && *p != '\n' && chars < (g_cloze_large ? 15 : 18)) {
-            int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
+    ClozeLineSpan lines[256];
+    int n = build_cloze_lines(text, g_cloze_large ? 15 : 18, lines, 256);
+    int shown = 0;
+    for (int i = page * maxLines; i < n && i < (page + 1) * maxLines; ++i) {
+        const char *start = lines[i].s, *endp = lines[i].e;
+        int cx = x;
+        if (g_cloze_large) {
+            int lw = cloze_line_width(start, endp);
+            cx = (400 - lw) / 2;
+            if (cx < 14) cx = 14;
         }
-        if (line >= page * maxLines) {
-            int cx = x;
-            if (g_cloze_large) {
-                int lw = cloze_line_width(start, p);
-                cx = (400 - lw) / 2;
-                if (cx < 14) cx = 14;
+        int yTop = y + shown * lineh;
+        for (const char *q = start; q < endp; ) {
+            int adv = 1; uint32_t cp = utf8_code(q, &adv);
+            bool hidden = false;
+            if (mask && !g_word_reveal) {
+                int moff = (int)(q - text);
+                unsigned char mc = (unsigned char)mask[moff];
+                hidden = (mc == 0xE2 || mc == '_');
             }
-            int yTop = y + shown * lineh;
-            for (const char *q = start; q < p; ) {
-                int adv = 1; uint32_t cp = utf8_code(q, &adv);
-                bool hidden = false;
-                if (mask && !g_word_reveal) {
-                    int moff = (int)(q - text);
-                    unsigned char mc = (unsigned char)mask[moff];
-                    hidden = (mc == 0xE2 || mc == '_'); // ○ U+25CB is E2 97 8B
-                }
-                int gw = cloze_advance(cp);
-                if (!hidden) {
-                    cloze_glyph_draw(cx, yTop, cp);
-                } else {
-                    // Clear the exact glyph cell, then draw a black ring around
-                    // the white hole. Character position is unchanged.
-                    u8g2_SetDrawColor(ui::g(), 0);
-                    u8g2_DrawBox(ui::g(), cx, yTop, gw, 20);
-                    u8g2_SetDrawColor(ui::g(), 1);
-                    u8g2_DrawCircle(ui::g(), cx + gw / 2, yTop + 10, 8, U8G2_DRAW_ALL);
-                }
-                cx += gw;
-                q += adv;
+            int gw = cloze_advance(cp);
+            if (!hidden) {
+                cloze_glyph_draw(cx, yTop, cp);
+            } else {
+                u8g2_SetDrawColor(ui::g(), 0);
+                u8g2_DrawBox(ui::g(), cx, yTop, gw, 20);
+                u8g2_SetDrawColor(ui::g(), 1);
+                u8g2_DrawCircle(ui::g(), cx + gw / 2, yTop + 10, 8, U8G2_DRAW_ALL);
             }
-            ++shown;
+            cx += gw;
+            q += adv;
         }
-        ++line;
-        if (*p == '\n') ++p;
-        else if (p == start) ++p;
+        ++shown;
     }
 }
 
