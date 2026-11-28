@@ -2364,6 +2364,9 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
                     g_cloze_group = atoi(qg);
                     if (g_cloze_group < 1) g_cloze_group = 1;
                     if (g_cloze_group > 6) g_cloze_group = 6;
+                    char qi[8] = {0};
+                    if (httpd_query_key_value(q, "idx", qi, sizeof(qi)) == ESP_OK)
+                        g_cloze_idx = atoi(qi);
                     if (httpd_query_key_value(q, "list", ql, sizeof(ql)) == ESP_OK && atoi(ql))
                         g_mode = MODE_CLOZE_LIST;
                     char qc[8] = {0};
