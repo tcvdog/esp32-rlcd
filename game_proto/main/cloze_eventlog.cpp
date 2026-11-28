@@ -75,5 +75,22 @@ void log(const char *clock, const char *event, const char *button,
     fclose(f);
 }
 
+void score(const char *clock, const char *group, const char *title,
+           int level, int delta, int total, int reveals) {
+    if (!session) begin(clock);
+    FILE *f = fopen(PATH, "a");
+    if (!f) return;
+    fputs("{\"type\":\"score\",\"session\":", f);
+    fprintf(f, "%lu", (unsigned long)session);
+    fprintf(f, ",\"seq\":%lu,\"clock\":", (unsigned long)(++seq));
+    jstr(f, clock ? clock : "");
+    fprintf(f, ",\"uptime_ms\":%llu,\"group\":", (unsigned long long)(esp_timer_get_time()/1000));
+    jstr(f, group ? group : "");
+    fputs(",\"title\":", f); jstr(f, title ? title : "");
+    fprintf(f, ",\"level\":%d,\"delta\":%d,\"total\":%d,\"reveals\":%d}\n",
+            level, delta, total, reveals);
+    fclose(f);
+}
+
 const char *path() { return PATH; }
 }

@@ -8,6 +8,7 @@ struct ClozeProgressItem {
     uint8_t done;
     uint8_t reveals;
     uint16_t seen;
+    uint16_t score;
 };
 
 namespace cloze_progress {
@@ -22,4 +23,6 @@ const ClozeProgressItem *get(int group, int idx);
 int opens(int group, int idx);
 int completed(int group);
 bool is_completed(int group, int idx);
+void add_score(int group, int idx, int delta);
+int total_score();
 }

@@ -24,8 +24,11 @@ static void ensure() {
     loaded = true;
     nvs_handle_t h;
     if (nvs_open(ns_name(), NVS_READONLY, &h) == ESP_OK) {
-        size_t n = sizeof(p);
-        if (nvs_get_blob(h, "progress", p, &n) != ESP_OK) memset(p, 0, sizeof(p));
+        memset(p, 0, sizeof(p));
+        size_t n = 0;
+        if (nvs_get_blob(h, "progress", nullptr, &n) == ESP_OK && n > 0 && n <= sizeof(p)) {
+            nvs_get_blob(h, "progress", p, &n); // old blobs are a prefix; new score becomes 0
+        }
         nvs_close(h);
     } else {
         memset(p, 0, sizeof(p));
@@ -112,6 +115,21 @@ int completed(int group) {
     if (group < 0 || group >= 8) return 0;
     int n = 0;
     for (int i = 0; i < 64; ++i) if (p[group][i].done) ++n;
+    return n;
+}
+
+void add_score(int group, int idx, int delta) {
+    ensure();
+    if (group < 0 || group >= 8 || idx < 0 || idx >= 64 || delta <= 0) return;
+    p[group][idx].score = (uint16_t)(p[group][idx].score + delta);
+    save();
+}
+
+int total_score() {
+    ensure();
+    int n = 0;
+    for (int g = 1; g <= 4; ++g)
+        for (int i = 0; i < 64; ++i) n += p[g][i].score;
     return n;
 }
 

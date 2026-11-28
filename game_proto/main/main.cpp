@@ -549,6 +549,8 @@ static bool g_cloze_active = false;
 static int g_cloze_stat_level = -1;
 static int g_cloze_stat_page = -1;
 static bool g_cloze_large = false;
+static char g_toast_text[64];
+static uint32_t g_toast_until = 0;
 static char g_snap_orig[4096];
 static char g_snap_mask[4096];
 static int g_hint_tokens = 3;
@@ -3206,10 +3208,29 @@ static void uiDrawFrame() {
     }
 }
 
+static void show_toast(const char *text) {
+    snprintf(g_toast_text, sizeof(g_toast_text), "%s", text ? text : "");
+    g_toast_until = (uint32_t)(esp_timer_get_time() / 1000) + 1800;
+}
+
+static void draw_toast() {
+    if (!g_toast_until) return;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    if (now >= g_toast_until) return;
+    int w = ui::textWidth12(g_toast_text) + 28;
+    if (w > 380) w = 380;
+    int x = (400 - w) / 2;
+    ui::setInk(ui::Ink::Black);
+    u8g2_DrawRBox(ui::g(), x, 108, w, 30, 5);
+    ui::setInk(ui::Ink::White);
+    ui::label12(x + 14, 128, g_toast_text);
+}
+
 static void presentFrame() {
     if (g_cmd_recording || g_cmd_busy) drawCmdOverlay();
     uiDrawFrame();
     if (!g_ui_frame || g_mode == MODE_MENU || g_mode == MODE_VIDEO || g_mode == MODE_IMAGE) drawBackButton();
+    draw_toast();
     uint8_t *fb = u8g2_GetBufferPtr(g);
     if (fb && !g_no_invert) {
         size_t fbBytes = (size_t)u8g2_GetBufferTileWidth(g) *
@@ -5128,6 +5149,22 @@ static void cloze_save_progress() {
                            g_cloze_page, g_seen_pages, g_level_reveals, done);
 }
 
+static void cloze_award_level(int level) {
+    static const int base[7] = { 0, 10, 15, 20, 25, 30, 35 };
+    if (level < 1 || level > 6) return;
+    int b = base[level];
+    int pct = g_level_reveals <= 0 ? 100 : (g_level_reveals == 1 ? 75 : (g_level_reveals == 2 ? 50 : 25));
+    int delta = b * pct / 100;
+    cloze_progress::add_score(g_cloze_group, g_cloze_idx, delta);
+    int total = cloze_progress::total_score();
+    char msg[64];
+    snprintf(msg, sizeof(msg), "恭喜通过 L%d  +%d 分", level, delta);
+    show_toast(msg);
+    cloze_event("level_score", "JOY");
+    cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
+                          level, delta, total, g_level_reveals);
+}
+
 static void cloze_submit_level() {
     int pages = cloze_current_pages();
     if (pages < 1) pages = 1;
@@ -5139,12 +5176,14 @@ static void cloze_submit_level() {
         return;
     }
     if (g_cloze_level >= 6) {
+        cloze_award_level(g_cloze_level);
         cloze_progress::update(g_cloze_group, g_cloze_idx, g_cloze_level, 0,
                                g_seen_pages, g_level_reveals, 1);
         cloze_event("level_complete", "JOY");
         g_word_reveal = false;
         return;
     }
+    cloze_award_level(g_cloze_level);
     ++g_cloze_level;
     g_cloze_page = 0;
     g_seen_pages = 0;
@@ -5371,7 +5410,7 @@ static void drawClozeStats() {
     int done = 0;
     for (int g = 1; g <= 4; ++g) done += cloze_progress::completed(g);
     char b[80];
-    snprintf(b, sizeof(b), "总数 198   已完成 %d   未完成 %d", done, 198 - done);
+    snprintf(b, sizeof(b), "总数198 完成%d 未完成%d 得分%d", done, 198 - done, cloze_progress::total_score());
     ui::label12(14, 72, b);
     u8g2_DrawHLine(g, 12, 82, 376);
 
