@@ -8,7 +8,7 @@ Board: Waveshare ESP32-S3-RLCD-4.2 (300x400 ST7306 reflective LCD, 16 MB flash, 
 - 400x300 1bpp retro stickman game
 - WULI-faithful light physics pages: projectile motion and spring oscillator (scene / graph / formula, 3 pages each)
 - Survey: 前额叶修复 5-question self-rating + generated report, saved to `/sdcard/survey_prefrontal.csv` and `/sdcard/survey_prefrontal_report.txt`
-- Flashcards: KET 100 / PET 100 / MATH 10 / PHYS 10
+- Flashcards: KET 100 / PET 100 / MATH 10 / PHYS 10 / cloze poems 20
 - KET/PET sentence memory: 100 + 100 words with English/Chinese sentences
 - D-key sentence TTS: `/sdcard/tts/{ket,pet}_NNN.mp3` (generate with `tools/gen_sentence_tts.py`)
 - game-style main menu: vertical levels + live hero art preview: word, physics, SD, music, survey, settings; game entry hidden

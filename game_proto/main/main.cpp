@@ -65,6 +65,9 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "poem_cards.h"
 #include "chushi_cards.h"
 #include "chushi_font20.h"
+#include "cloze_stats.h"
+#include "cloze_content.h"
+#include "cloze_text.h"
 
 #include "ink_effect_frames.h"
 
@@ -470,7 +473,7 @@ static float qcfDownAt = -10.0f;
 static int lastTapDir = 0;
 static float lastTapAt = -10.0f;
 
-enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18, MODE_VIDEO = 19 };
+enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18, MODE_VIDEO = 19, MODE_CLOZE_MENU = 20, MODE_CLOZE_LIST = 21, MODE_CLOZE_STATS = 22 };
 static int g_mode = MODE_MENU;
 static int g_menu_sel = 0;
 static int g_secret_step = 0;
@@ -529,6 +532,13 @@ static int g_word_level = 0; // 0 KET,1 PET,2 MATH,3 PHYS,4 POEM
 static int g_cloze_level = 1;
 static int g_cloze_page = 0;
 static bool g_word_force_blank = false;
+static int g_cloze_group = 0;       // 0 出师表, 1 primary, 2 middle, 3 classical
+static int g_cloze_idx = 0;
+static int g_cloze_menu_sel = 0;
+static int g_cloze_list_sel = 0;
+static bool g_cloze_active = false;
+static int g_cloze_stat_level = -1;
+static int g_cloze_stat_page = -1;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
@@ -2341,6 +2351,28 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
                 char rv[8] = {0};
                 g_word_reveal = !(httpd_query_key_value(q, "reveal", rv, sizeof(rv)) == ESP_OK && atoi(rv) == 0);
                 g_mode = MODE_WORD;
+                char qd[8] = {0};
+                if (httpd_query_key_value(q, "dir", qd, sizeof(qd)) == ESP_OK && atoi(qd)) {
+                    g_mode = MODE_CLOZE_MENU;
+                }
+                char qs[8] = {0};
+                if (httpd_query_key_value(q, "stats", qs, sizeof(qs)) == ESP_OK && atoi(qs)) {
+                    g_mode = MODE_CLOZE_STATS;
+                }
+                char qg[8] = {0}, ql[8] = {0};
+                if (httpd_query_key_value(q, "group", qg, sizeof(qg)) == ESP_OK) {
+                    g_cloze_group = atoi(qg);
+                    if (g_cloze_group < 1) g_cloze_group = 1;
+                    if (g_cloze_group > 3) g_cloze_group = 3;
+                    if (httpd_query_key_value(q, "list", ql, sizeof(ql)) == ESP_OK && atoi(ql))
+                        g_mode = MODE_CLOZE_LIST;
+                    char qc[8] = {0};
+                    if (httpd_query_key_value(q, "card", qc, sizeof(qc)) == ESP_OK && atoi(qc)) {
+                        g_mode = MODE_WORD;
+                        g_cloze_page = 0;
+                        g_word_reveal = false;
+                    }
+                }
             } else g_mode = MODE_WORD_MENU;
         }
         else if (sel == 1) g_mode = MODE_PHYSICS;
@@ -2674,6 +2706,19 @@ static esp_err_t ota_diag_get(httpd_req_t *req) {
     return httpd_resp_sendstr(req, json);
 }
 
+static esp_err_t ota_cloze_csv_get(httpd_req_t *req) {
+    FILE *f = fopen("/sdcard/cloze_stats.csv", "r");
+    if (!f) { httpd_resp_sendstr(req, "no cloze stats yet"); return ESP_OK; }
+    char buf[512];
+    httpd_resp_set_type(req, "text/csv");
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0)
+        httpd_resp_send_chunk(req, buf, n);
+    fclose(f);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 static esp_err_t ota_screen_get(httpd_req_t *req) {
     if (!g) {
         httpd_resp_sendstr(req, "display not ready");
@@ -2951,6 +2996,7 @@ static void ota_start(void) {
     httpd_uri_t upload = { .uri = "/upload", .method = HTTP_POST, .handler = ota_upload_post, .user_ctx = NULL };
     httpd_uri_t feedback = { .uri = "/feedback", .method = HTTP_POST, .handler = ota_feedback_post, .user_ctx = NULL };
     httpd_uri_t screen = { .uri = "/screen.pbm", .method = HTTP_GET, .handler = ota_screen_get, .user_ctx = NULL };
+    httpd_uri_t cloze_csv = { .uri = "/cloze_stats.csv", .method = HTTP_GET, .handler = ota_cloze_csv_get, .user_ctx = NULL };
     httpd_uri_t upd = { .uri = "/update", .method = HTTP_POST, .handler = ota_update_post, .user_ctx = NULL };
     httpd_uri_t note = { .uri = "/note", .method = HTTP_POST, .handler = ota_note_post, .user_ctx = NULL };
     httpd_register_uri_handler(server, &root);
@@ -2971,6 +3017,7 @@ static void ota_start(void) {
     httpd_register_uri_handler(server, &upload);
     httpd_register_uri_handler(server, &feedback);
     httpd_register_uri_handler(server, &screen);
+    httpd_register_uri_handler(server, &cloze_csv);
     httpd_register_uri_handler(server, &upd);
     httpd_register_uri_handler(server, &note);
     ESP_LOGI(TAG, "OTA AP STICKMAN-RLCD / stickman123 / 192.168.4.1, STA YOUR_WIFI_SSID");
@@ -2998,6 +3045,9 @@ static const char *uiPathForMode() {
     switch (g_mode) {
         case MODE_WORD_MENU: return "SYS // FLASH";
         case MODE_WORD: return (g_word_level == 4) ? "SYS // FLASH // POEM" : "SYS // FLASH // CARD";
+        case MODE_CLOZE_MENU: return "SYS // FLASH // CLOZE";
+        case MODE_CLOZE_LIST: return "SYS // FLASH // LIST";
+        case MODE_CLOZE_STATS: return "SYS // FLASH // STATS";
         case MODE_PHYSICS: return "SYS // PHYSICS";
         case MODE_SETTINGS: return "SYS // CONFIG";
         case MODE_SETTINGS_CTRL: return "SYS // CONFIG // OUTPUT";
@@ -3088,6 +3138,12 @@ static void uiDrawFrame() {
         uiBottomKey(4, "JOY", "SCROLL");
         uiBottomKey(150, "K3", "MENU");
         uiBottomKey(300, "SW", "BACK");
+    } else if (g_mode == MODE_CLOZE_MENU || g_mode == MODE_CLOZE_LIST) {
+        uiBottomKey(6, "JOY", "SELECT");
+        uiBottomKey(150, "K3", "OPEN");
+        uiBottomKey(300, "K4", "BACK");
+    } else if (g_mode == MODE_CLOZE_STATS) {
+        uiBottomKey(150, "K4", "BACK");
     } else if (g_mode == MODE_WORD) {
         if (g_word_level == 4) {
             uiBottomKey(4, "JOY", "LV/PG");
@@ -4465,7 +4521,12 @@ static void handleWordMenu() {
         g_cloze_level = 1;
         g_cloze_page = 0;
         g_word_reveal = false;
-        g_mode = MODE_WORD;
+        if (g_word_cat_sel == 4) {
+            g_cloze_menu_sel = 0;
+            g_mode = MODE_CLOZE_MENU;
+        } else {
+            g_mode = MODE_WORD;
+        }
     }
     prevIn = in;
 }
@@ -4662,46 +4723,255 @@ static void draw_masked_poem_line(const char *line, int x, int y, int maskChars)
     }
 }
 
-static void drawPoemShort(const PoemCard &p, int idx) {
-    ui::setInk(ui::Ink::Black);
-    ui::panel(6, 32, 388, 218);
-    ui::label16(16, 56, p.title);
-    ui::label12(16, 76, p.author);
-    ui::mono(330, 56, g_word_reveal ? "FULL" : "MASK");
-    u8g2_DrawHLine(g, 14, 84, 372);
-    for (int i = 0; i < 4; ++i)
-        draw_masked_poem_line(p.lines[i], 18, 112 + i * 29, g_word_reveal ? 0 : p.mask);
-    if (!g_word_reveal) ui::label12(18, 228, "镂空遮挡 · K3 揭晓");
-    else ui::label12(18, 228, "全文");
-    char b[40];
-    snprintf(b, sizeof(b), "POEM %d/%d", idx, POEM_COUNT);
-    ui::mono(18, 262, b);
+static void cloze_note_page(int level, int page);
+static const char *cloze_group_name(int group);
+
+static const ClozeText *cloze_text_for(int group, int idx) {
+    if (group == 1 && idx >= 0 && idx < 8) return &CLOZE_PRIMARY[idx];
+    if (group == 2 && idx >= 0 && idx < 6) return &CLOZE_MIDDLE[idx];
+    if (group == 3 && idx >= 0 && idx < 6) return &CLOZE_CLASSICAL[idx];
+    return nullptr;
 }
 
-static void drawChushi() {
+static void drawClozeTextCard(const ClozeText &t) {
     ui::setInk(ui::Ink::Black);
     ui::panel(6, 32, 388, 218);
-    ui::label16(14, 52, "出师表");
-    ui::label12(78, 52, "三国 · 诸葛亮");
-    int pages = poem_page_count(CHUSHI_ORIGINAL, 374, 7);
+    ui::label16(14, 52, t.title);
+    int ax = 14 + ui::textWidth16(t.title) + 10;
+    if (ax > 190) ax = 190;
+    ui::label12(ax, 52, t.author);
+    int pages = poem_page_count(t.original, 374, 7);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 52, b);
     u8g2_DrawHLine(g, 12, 62, 376);
-    const char *mask = g_word_reveal ? nullptr : CHUSHI_LEVELS[g_cloze_level - 1];
-    draw_cloze_overlay(CHUSHI_ORIGINAL, mask, g_cloze_page, 14, 72, 24, 7);
+    const char *mask = g_word_reveal ? nullptr : t.levels[g_cloze_level - 1];
+    draw_cloze_overlay(t.original, mask, g_cloze_page, 14, 72, 24, 7);
+    cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
     snprintf(hint, sizeof(hint), "换篇 / 调级 / 翻页   %s",
              g_word_reveal ? "原文 K3 返回镂空" : "镂空遮挡 K3 显示原文");
     ui::label12(14, 264, hint);
 }
 
+static void drawChushi() {
+    static ClozeText t;
+    t.title = "出师表";
+    t.author = "三国 · 诸葛亮";
+    t.original = CHUSHI_ORIGINAL;
+    for (int i = 0; i < 5; ++i) t.levels[i] = CHUSHI_LEVELS[i];
+    drawClozeTextCard(t);
+}
+
+static int cloze_group_count(int group) {
+    if (group <= 0) return 1;
+    if (group - 1 >= CLOZE_GROUP_COUNT) return 0;
+    return CLOZE_GROUPS[group - 1].count;
+}
+
+static const PoemCard *cloze_item(int group, int idx) {
+    if (group <= 0) return nullptr;
+    const ClozeGroup &g = CLOZE_GROUPS[group - 1];
+    if (idx < 0 || idx >= g.count) return nullptr;
+    return &g.items[idx];
+}
+
+static const char *cloze_group_name(int group) {
+    if (group <= 0) return "出师表";
+    if (group - 1 >= CLOZE_GROUP_COUNT) return "诗词";
+    return CLOZE_GROUPS[group - 1].name;
+}
+
+static const char *cloze_group_sub(int group) {
+    if (group <= 0) return "长篇 · 5 级镂空";
+    if (group - 1 >= CLOZE_GROUP_COUNT) return "";
+    return CLOZE_GROUPS[group - 1].sub;
+}
+
+static const char *cloze_title() {
+    if (g_cloze_group <= 0) return "出师表";
+    const PoemCard *p = cloze_item(g_cloze_group, g_cloze_idx);
+    return p ? p->title : "诗词";
+}
+
+static void cloze_append(const char *event) {
+    cloze_stats::appendEvent(g_clock, event, cloze_group_name(g_cloze_group),
+                             cloze_title(), g_cloze_level, g_cloze_page);
+}
+
+static void cloze_enter_card(int group, int idx) {
+    g_cloze_group = group;
+    g_cloze_idx = idx;
+    g_word_level = 4;
+    g_word_reveal = false;
+    g_cloze_page = 0;
+    g_cloze_stat_level = -1;
+    g_cloze_stat_page = -1;
+    g_cloze_active = true;
+    g_mode = MODE_WORD;
+    cloze_stats::enter(g_cloze_level);
+    cloze_append("enter");
+}
+
+static void cloze_exit_card() {
+    if (!g_cloze_active) return;
+    cloze_stats::exitSession();
+    cloze_append("exit");
+    g_cloze_active = false;
+}
+
+static void cloze_switch(int delta) {
+    int cnt = cloze_group_count(g_cloze_group);
+    if (cnt <= 1) return;
+    cloze_stats::exitSession();
+    cloze_append("exit");
+    g_cloze_idx = (g_cloze_idx + cnt + delta) % cnt;
+    g_cloze_page = 0;
+    g_word_reveal = false;
+    g_cloze_stat_level = -1;
+    g_cloze_stat_page = -1;
+    cloze_stats::enter(g_cloze_level);
+    cloze_append("enter");
+}
+
+static void cloze_note_page(int level, int page) {
+    if (!g_cloze_active) return;
+    if (level == g_cloze_stat_level && page == g_cloze_stat_page) return;
+    g_cloze_stat_level = level;
+    g_cloze_stat_page = page;
+    cloze_stats::visitPage(level, page);
+    cloze_append("page");
+}
+
+static void drawClozeMenu() {
+    ui::setInk(ui::Ink::Black);
+    ui::label16(10, 42, "诗词古文");
+    ui::mono(112, 41, "CLOZE // CONTENT");
+    ui::mono(340, 41, "05");
+    u8g2_DrawHLine(g, 8, 48, 384);
+    const char *names[5] = { "出师表", "小学古诗词", "初中古诗词", "文言文", "学习统计" };
+    const char *subs[5] = { "长篇 · 5 级镂空", "08 首 · 词级遮挡", "06 首 · 词级遮挡", "06 篇 · 文言文", "进入/退出/页面" };
+    const int ys[5] = { 58, 96, 134, 172, 210 };
+    for (int i = 0; i < 5; ++i) {
+        int y = ys[i];
+        bool sel = (i == g_cloze_menu_sel);
+        ui::card(10, y, 380, 32, sel);
+        char num[4]; snprintf(num, sizeof(num), "%02d", i + 1);
+        ui::mono(20, y + 20, num);
+        ui::label16(62, y + 22, names[i]);
+        ui::label12(230, y + 22, subs[i]);
+        ui::setInk(ui::Ink::Black);
+    }
+}
+
+static void handleClozeMenu() {
+    if (in.up && !prevIn.up) g_cloze_menu_sel = (g_cloze_menu_sel + 4) % 5;
+    if (in.down && !prevIn.down) g_cloze_menu_sel = (g_cloze_menu_sel + 1) % 5;
+    if (in.k3 && !prevIn.k3) {
+        if (g_cloze_menu_sel == 0) cloze_enter_card(0, 0);
+        else if (g_cloze_menu_sel == 4) g_mode = MODE_CLOZE_STATS;
+        else {
+            g_cloze_group = g_cloze_menu_sel;
+            g_cloze_list_sel = 0;
+            g_mode = MODE_CLOZE_LIST;
+        }
+    }
+    if (in.k4 && !prevIn.k4) g_mode = MODE_WORD_MENU;
+    prevIn = in;
+}
+
+static void drawClozeList() {
+    ui::setInk(ui::Ink::Black);
+    int group = g_cloze_group;
+    int count = cloze_group_count(group);
+    ui::label16(10, 46, cloze_group_name(group));
+    char b[40];
+    snprintf(b, sizeof(b), "%s  /  %d ITEMS", cloze_group_sub(group), count);
+    ui::label12(164, 45, b);
+    u8g2_DrawHLine(g, 8, 54, 384);
+    for (int i = 0; i < count; ++i) {
+        int y = 60 + i * 24;
+        const PoemCard *p = cloze_item(group, i);
+        if (!p) continue;
+        bool sel = (i == g_cloze_list_sel);
+        ui::shadow(10, y, 380, 22);
+        ui::setInk(ui::Ink::White);
+        u8g2_DrawBox(g, 10, y, 380, 22);
+        if (sel) {
+            ui::setInk(ui::Ink::Black);
+            u8g2_DrawBox(g, 10, y, 380, 22);
+            ui::setInk(ui::Ink::White);
+        } else {
+            ui::setInk(ui::Ink::Black);
+            u8g2_DrawFrame(g, 10, y, 380, 22);
+        }
+        char n[16]; snprintf(n, sizeof(n), "%02d", i + 1);
+        ui::mono(20, y + 16, n);
+        ui::label16(56, y + 18, p->title);
+        ui::label12(260, y + 16, p->author);
+        ui::setInk(ui::Ink::Black);
+    }
+}
+
+static void handleClozeList() {
+    int count = cloze_group_count(g_cloze_group);
+    if (count > 0) {
+        if (in.up && !prevIn.up) g_cloze_list_sel = (g_cloze_list_sel + count - 1) % count;
+        if (in.down && !prevIn.down) g_cloze_list_sel = (g_cloze_list_sel + 1) % count;
+        if (in.k3 && !prevIn.k3) cloze_enter_card(g_cloze_group, g_cloze_list_sel);
+    }
+    if (in.k4 && !prevIn.k4) g_mode = MODE_CLOZE_MENU;
+    prevIn = in;
+}
+
+static void drawClozeStats() {
+    const ClozeStatsData &d = cloze_stats::data();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(6, 32, 388, 218);
+    ui::label16(14, 52, "学习统计");
+    ui::mono(14, 72, "CLOZE // ANALYTICS");
+    char b[96];
+    snprintf(b, sizeof(b), "ENTER %u   EXIT %u", (unsigned)d.enters, (unsigned)d.exits);
+    ui::mono(14, 94, b);
+    snprintf(b, sizeof(b), "ANSWER K3 %u", (unsigned)d.answerToggles);
+    ui::mono(14, 112, b);
+    u8g2_DrawHLine(g, 12, 122, 376);
+    ui::mono(14, 140, "LEVEL ENTRIES");
+    for (int i = 0; i < 5; ++i) {
+        snprintf(b, sizeof(b), "L%d:%u", i + 1, (unsigned)d.levelEnters[i]);
+        ui::mono(14 + (i % 5) * 74, 156, b);
+    }
+    ui::mono(14, 178, "PAGE VISITS");
+    for (int i = 0; i < 5; ++i) {
+        char line[96] = {0};
+        int pos = 0;
+        for (int p = 0; p < 8; ++p) {
+            if (d.pageVisits[i][p] == 0) continue;
+            pos += snprintf(line + pos, sizeof(line) - pos, "P%d:%u ", p + 1,
+                            (unsigned)d.pageVisits[i][p]);
+            if (pos > 80) break;
+        }
+        if (line[0] == 0) snprintf(line, sizeof(line), "--");
+        snprintf(b, sizeof(b), "L%d %.80s", i + 1, line);
+        ui::label12(14, 190 + i * 12, b);
+    }
+}
+
+static void handleClozeStats() {
+    if (in.k4 && !prevIn.k4) g_mode = MODE_CLOZE_MENU;
+    prevIn = in;
+}
+
 static void drawWord() {
     if (g_word_level == 4) {
-        if (g_word_idx == 0) drawChushi();
-        else drawPoemShort(POEM_CARDS[g_word_idx - 1], g_word_idx);
+        if (g_cloze_group == 0) {
+            drawChushi();
+        } else {
+            const ClozeText *t = cloze_text_for(g_cloze_group, g_cloze_idx);
+            if (t) drawClozeTextCard(*t);
+        }
         return;
     }
     const WordCard &w = *word_card_at(g_word_level, g_word_idx);
@@ -4783,16 +5053,18 @@ static void handleWordInput() {
             if (now - last_k3_ms > 180) {
                 g_word_reveal = !g_word_reveal;
                 g_word_force_blank = true;
+                cloze_stats::toggleAnswer();
+                cloze_append(g_word_reveal ? "answer_on" : "answer_off");
                 last_k3_ms = now;
             }
         }
-        if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 5 ? 1 : g_cloze_level + 1; g_cloze_page = 0; }
-        if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 5 : g_cloze_level - 1; g_cloze_page = 0; }
+        if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 5 ? 1 : g_cloze_level + 1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_append("level"); }
+        if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 5 : g_cloze_level - 1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_append("level"); }
         if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) --g_cloze_page; }
         if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; }
-        if (in.k1 && !prevIn.k1) { g_word_idx = (g_word_idx + word_level_count(4) - 1) % word_level_count(4); g_cloze_page = 0; g_word_reveal = false; }
-        if (in.k2 && !prevIn.k2) { g_word_idx = (g_word_idx + 1) % word_level_count(4); g_cloze_page = 0; g_word_reveal = false; }
-        if (in.k4 && !prevIn.k4) { g_mode = MODE_WORD_MENU; g_word_reveal = false; g_cloze_page = 0; }
+        if (in.k1 && !prevIn.k1) cloze_switch(-1);
+        if (in.k2 && !prevIn.k2) cloze_switch(1);
+        if (in.k4 && !prevIn.k4) { cloze_exit_card(); g_mode = MODE_CLOZE_LIST; g_word_reveal = false; g_cloze_page = 0; }
         prevIn = in;
         return;
     }
@@ -8213,7 +8485,13 @@ static void goBack() {
     if (g_mode == MODE_SURVEY_REPORT) { g_mode = MODE_SURVEY_MENU; return; }
     if (g_mode == MODE_SURVEY) { g_mode = MODE_SURVEY_MENU; return; }
     if (g_mode == MODE_SURVEY_MENU) { g_mode = MODE_MENU; return; }
-    if (g_mode == MODE_WORD) { g_mode = MODE_WORD_MENU; return; }
+    if (g_mode == MODE_CLOZE_STATS) { g_mode = MODE_CLOZE_MENU; return; }
+    if (g_mode == MODE_CLOZE_LIST) { g_mode = MODE_CLOZE_MENU; return; }
+    if (g_mode == MODE_CLOZE_MENU) { g_mode = MODE_WORD_MENU; return; }
+    if (g_mode == MODE_WORD) {
+        if (g_word_level == 4) { cloze_exit_card(); g_mode = MODE_CLOZE_LIST; return; }
+        g_mode = MODE_WORD_MENU; return;
+    }
     if (g_mode == MODE_WORD_MENU) { g_mode = MODE_MENU; return; }
     if (g_mode == MODE_SETTINGS_CTRL) { g_mode = MODE_SETTINGS; return; }
     if (g_mode == MODE_SETTINGS) { g_mode = MODE_MENU; return; }
@@ -8384,7 +8662,25 @@ static void gameTask(void *arg) {
             u8g2_SetDrawColor(g, 1);
             drawSettingsCtrl();
             presentFrame();
-    } else if (g_mode == MODE_WORD) {
+    } else if (g_mode == MODE_CLOZE_MENU) {
+            handleClozeMenu();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawClozeMenu();
+            presentFrame();
+        } else if (g_mode == MODE_CLOZE_LIST) {
+            handleClozeList();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawClozeList();
+            presentFrame();
+        } else if (g_mode == MODE_CLOZE_STATS) {
+            handleClozeStats();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawClozeStats();
+            presentFrame();
+        } else if (g_mode == MODE_WORD) {
             handleWordInput();
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
