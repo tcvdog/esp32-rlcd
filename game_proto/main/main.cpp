@@ -5152,9 +5152,7 @@ static void cloze_save_progress() {
 static void cloze_award_level(int level) {
     static const int base[7] = { 0, 10, 15, 20, 25, 30, 35 };
     if (level < 1 || level > 6) return;
-    int b = base[level];
-    int pct = g_level_reveals <= 0 ? 100 : (g_level_reveals == 1 ? 75 : (g_level_reveals == 2 ? 50 : 25));
-    int delta = b * pct / 100;
+    int delta = base[level];
     cloze_progress::add_score(g_cloze_group, g_cloze_idx, delta);
     int total = cloze_progress::total_score();
     char msg[64];
@@ -5536,6 +5534,11 @@ static void handleWordInput() {
                     } else {
                         --g_hint_tokens;
                         ++g_level_reveals;
+                        cloze_progress::add_score(g_cloze_group, g_cloze_idx, -3);
+                        int hintTotal = cloze_progress::total_score();
+                        cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
+                                              g_cloze_level, -3, hintTotal, g_level_reveals);
+                        show_toast("提示 -3 分");
                         g_word_reveal = true;
                         g_word_force_blank = true;
                         cloze_stats::toggleAnswer();

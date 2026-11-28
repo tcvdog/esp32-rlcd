@@ -120,8 +120,8 @@ int completed(int group) {
 
 void add_score(int group, int idx, int delta) {
     ensure();
-    if (group < 0 || group >= 8 || idx < 0 || idx >= 64 || delta <= 0) return;
-    p[group][idx].score = (uint16_t)(p[group][idx].score + delta);
+    if (group < 0 || group >= 8 || idx < 0 || idx >= 64 || delta == 0) return;
+    p[group][idx].score = (int16_t)(p[group][idx].score + delta);
     save();
 }
 

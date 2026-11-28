@@ -8,7 +8,7 @@ struct ClozeProgressItem {
     uint8_t done;
     uint8_t reveals;
     uint16_t seen;
-    uint16_t score;
+    int16_t score;
 };
 
 namespace cloze_progress {
