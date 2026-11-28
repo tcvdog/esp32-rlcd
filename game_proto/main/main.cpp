@@ -5080,12 +5080,12 @@ static void drawClozeTextCard(const ClozeText &t) {
     uint32_t nnow = (uint32_t)(esp_timer_get_time() / 1000);
     int secs = (nnow >= g_level_start_ms) ? (int)((nnow - g_level_start_ms) / 1000) : 0;
     if (g_cloze_level == 6)
-        snprintf(hint, sizeof(hint), "%sL6上下换随机 · 左右翻页 · 提示%d次 减%d分 · 用时%d:%02d",
-                 t.alt ? "非课本获取 · " : "", g_level_reveals, g_level_reveals * 3, secs / 60, secs % 60);
+        snprintf(hint, sizeof(hint), "%sL6上下换随机 · 左右翻页 · 已提示%d次 · 用时%d:%02d",
+                 t.alt ? "非课本获取 · " : "", g_level_reveals, secs / 60, secs % 60);
     else
-        snprintf(hint, sizeof(hint), "%s左右翻页/末页提交 · %s · 提示%d次 减%d分 · 用时%d:%02d",
+        snprintf(hint, sizeof(hint), "%s左右翻页/末页提交 · %s · 已提示%d次 · 用时%d:%02d",
                  t.alt ? "非课本获取 · " : "",
-                 g_word_reveal ? "原文K3返回" : "K3显示原文", g_level_reveals, g_level_reveals * 3, secs / 60, secs % 60);
+                 g_word_reveal ? "原文K3返回" : "K3显示原文", g_level_reveals, secs / 60, secs % 60);
     ui::label12(14, 264, hint);
 }
 
@@ -5608,10 +5608,6 @@ static void handleWordInput() {
                                  g_level_reveals * 3);
                         cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
                                               g_cloze_level, -3, hintTotal, g_level_reveals, "hint", hd);
-                        char warn[64];
-                        snprintf(warn, sizeof(warn), "提示扣分 -3 · 第%d次 · 共%d", g_level_reveals,
-                                 g_level_reveals * 3);
-                        show_toast(warn);
                         g_word_reveal = true;
                         g_word_force_blank = true;
                         cloze_stats::toggleAnswer();
