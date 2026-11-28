@@ -1,6 +1,6 @@
 #pragma once
 
 // Single source of truth for the hardware firmware version.
-#define FW_VERSION "v0.66.1"
+#define FW_VERSION "v0.66.2"
 #define FW_NAME    "KOF-AI-OTA"
 #define FW_BUILD   __DATE__ " " __TIME__

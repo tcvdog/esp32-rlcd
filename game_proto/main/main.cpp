@@ -64,6 +64,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "word_cards.h"
 #include "poem_cards.h"
 #include "chushi_cards.h"
+#include "chushi_font20.h"
 
 #include "ink_effect_frames.h"
 
@@ -4515,11 +4516,44 @@ static int poem_page_count(const char *text, int maxw, int maxLines) {
     for (const char *p = text; *p; ) {
         if (*p == '\n') { ++lines; chars = 0; ++p; continue; }
         int b = utf8_len((unsigned char)*p);
-        if (chars >= 20) { ++lines; chars = 0; }
+        if (chars >= 18) { ++lines; chars = 0; }
         ++chars;
         p += b;
     }
     return (lines + maxLines - 1) / maxLines;
+}
+
+static const ClozeGlyph *cloze_glyph(uint32_t cp) {
+    int lo = 0, hi = CLOZE_GLYPH_COUNT - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (CLOZE_GLYPHS[mid].cp == cp) return &CLOZE_GLYPHS[mid];
+        if (CLOZE_GLYPHS[mid].cp < cp) lo = mid + 1; else hi = mid - 1;
+    }
+    return nullptr;
+}
+
+static uint32_t utf8_code(const char *p, int *adv) {
+    unsigned char c = (unsigned char)p[0];
+    if (c < 0x80) { *adv = 1; return c; }
+    if ((c & 0xE0) == 0xC0) { *adv = 2; return ((c & 0x1F) << 6) | (p[1] & 0x3F); }
+    if ((c & 0xF0) == 0xE0) { *adv = 3; return ((c & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F); }
+    if ((c & 0xF8) == 0xF0) { *adv = 4; return ((c & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F); }
+    *adv = 1; return '?';
+}
+
+static int cloze_advance(uint32_t cp) {
+    const ClozeGlyph *g = cloze_glyph(cp);
+    return g ? (int)g->w : 10;
+}
+
+static void cloze_glyph_draw(int x, int yTop, uint32_t cp) {
+    const ClozeGlyph *g = cloze_glyph(cp);
+    if (!g) return;
+    u8g2_SetBitmapMode(ui::g(), 1);
+    u8g2_SetDrawColor(ui::g(), 1);
+    u8g2_DrawXBMP(ui::g(), x, yTop, g->w, g->h, CLOZE_GLYPH_BITS + g->off);
+    u8g2_SetBitmapMode(ui::g(), 0);
 }
 
 static void draw_cloze_page(const char *text, int page, int x, int y, int lineh, int maxw, int maxLines) {
@@ -4530,16 +4564,17 @@ static void draw_cloze_page(const char *text, int page, int x, int y, int lineh,
     while (*p && line < (page + 1) * maxLines) {
         const char *start = p;
         int chars = 0;
-        while (*p && *p != '\n' && chars < 20) {
-            p += utf8_len((unsigned char)*p);
-            ++chars;
+        while (*p && *p != '\n' && chars < 18) {
+            int adv = 1; utf8_code(p, &adv); p += adv; ++chars;
         }
         if (line >= page * maxLines) {
-            char buf[512];
-            int n = (int)(p - start);
-            if (n > (int)sizeof(buf) - 1) n = sizeof(buf) - 1;
-            memcpy(buf, start, n); buf[n] = 0;
-            u8g2_DrawUTF8(g, x, y + shown * lineh, buf);
+            int cx = x;
+            for (const char *q = start; q < p; ) {
+                int adv = 1; uint32_t cp = utf8_code(q, &adv);
+                cloze_glyph_draw(cx, y + shown * lineh, cp);
+                cx += cloze_advance(cp);
+                q += adv;
+            }
             ++shown;
         }
         ++line;
@@ -4603,16 +4638,15 @@ static void drawChushi() {
     ui::panel(6, 32, 388, 218);
     ui::label16(14, 54, "出师表");
     ui::label12(14, 72, "三国 · 诸葛亮");
-    int pages = poem_page_count(g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1], 374, 7);
+    int pages = poem_page_count(g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1], 374, 6);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 54, b);
     u8g2_DrawHLine(g, 12, 80, 376);
-    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
     const char *body = g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1];
-    draw_cloze_page(body, g_cloze_page, 14, 98, 20, 374, 7);
+    draw_cloze_page(body, g_cloze_page, 14, 88, 24, 374, 6);
     ui::label12(14, 236, g_word_reveal ? "原文 · K3 返回镂空" : "镂空遮挡 · K3 显示原文");
     ui::label12(14, 262, "换篇 / 调级 / 翻页");
 }
