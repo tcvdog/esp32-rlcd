@@ -9,6 +9,8 @@ static u8g2_t *s = nullptr;
 static uint8_t s_black = 1;
 static uint8_t s_white = 0;
 
+u8g2_t *g() { return s; }
+
 void begin(u8g2_t *g, bool inverted) {
     s = g;
     s_black = inverted ? 0 : 1;
@@ -74,6 +76,41 @@ void panel(int x, int y, int w, int h) {
     setInk(Ink::Black);
     u8g2_DrawRFrame(s, x, y, w, h, 4);
     u8g2_DrawRFrame(s, x + 1, y + 1, w - 2, h - 2, 3);
+}
+
+void segmentedBar(int x, int y, int w, int h, int value, int max, int segments) {
+    if (segments < 1) segments = 1;
+    int gap = 2;
+    int cw = (w - (segments - 1) * gap) / segments;
+    if (cw < 2) { cw = 2; gap = 0; }
+    int filled = max > 0 ? (value * segments + max - 1) / max : 0;
+    if (filled > segments) filled = segments;
+    for (int i = 0; i < segments; ++i) {
+        int bx = x + i * (cw + gap);
+        setInk(Ink::Black);
+        if (i < filled) u8g2_DrawBox(s, bx, y, cw, h);
+        else u8g2_DrawFrame(s, bx, y, cw, h);
+    }
+}
+
+void levelMeter(int x, int y, int w, int h, int level, int zones) {
+    if (zones < 1) zones = 1;
+    int gap = 2;
+    int bw = (w - (zones - 1) * gap) / zones;
+    if (bw < 2) { bw = 2; gap = 0; }
+    int lit = level * zones / 32768;
+    if (lit > zones) lit = zones;
+    for (int i = 0; i < zones; ++i) {
+        int bh = 3 + (h - 3) * (i + 1) / zones;
+        int bx = x + i * (bw + gap);
+        if (i < lit) u8g2_DrawBox(s, bx, y + h - bh, bw, bh);
+        else u8g2_DrawFrame(s, bx, y + h - bh, bw, bh);
+    }
+}
+
+void dottedDivider(int x, int y, int w) {
+    setInk(Ink::Black);
+    for (int i = 0; i < w; i += 6) u8g2_DrawPixel(s, x + i, y);
 }
 
 void progress(int x, int y, int w, int value, int max) {

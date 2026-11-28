@@ -58,6 +58,7 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "user_config.h"
 #include "fw_version.h"
 #include "ui_theme.h"
+#include "ui_audio.h"
 #include "win_glyphs.h"
 #include "menu_glyphs.h"
 #include "word_cards.h"
@@ -497,6 +498,9 @@ static volatile uint32_t g_mp3_pos = 0, g_mp3_total = 0;
 static char g_audio_path[300] = "";
 static uint8_t *g_img_gray = nullptr;
 static int g_music_count = 0, g_music_sel = 0, g_music_off = 0;
+static int g_music_repeat = 0; // 0 off, 1 all, 2 one
+static bool g_music_dirty = true;
+static uint32_t g_music_next_draw = 0;
 static FILE *g_video_f = nullptr;
 static uint16_t g_video_w = 0, g_video_h = 0, g_video_frames = 0, g_video_idx = 0;
 static uint8_t g_video_fps = 0;
@@ -2983,7 +2987,16 @@ static const char *uiPathForMode() {
         case MODE_FEEDBACK: return "SYS // VOICE // FEEDBACK";
         case MODE_WIFI: return "SYS // NETWORK";
         case MODE_FILES: return "SYS // STORAGE";
-        case MODE_MUSIC: return "SYS // AUDIO";
+        case MODE_MUSIC: {
+            static char p[48];
+            if (g_music_count > 0 && g_music_sel >= 0 && g_music_sel < g_music_count) {
+                const char *n = g_file_names[g_music_files[g_music_sel]];
+                const char *d = strrchr(n, '.');
+                snprintf(p, sizeof(p), "[SYS // AUDIO // %s 16kHz]", d ? d + 1 : "TRACK");
+                for (char *q = p + 17; *q; ++q) if (*q >= 'a' && *q <= 'z') *q -= 32;
+            } else snprintf(p, sizeof(p), "[SYS // AUDIO]");
+            return p;
+        }
         case MODE_SURVEY_MENU: return "SYS // SURVEY";
         case MODE_SURVEY: return "SYS // SURVEY // FORM";
         case MODE_SURVEY_REPORT: return "SYS // SURVEY // REPORT";
@@ -3014,12 +3027,12 @@ static void uiDrawFrame() {
         uiBottomKey(232, "K2", "HIGH");
         uiBottomKey(324, "SW", "BACK");
     } else if (g_mode == MODE_MUSIC) {
-        uiBottomKey(4, "JOY", "SEEK");
-        uiBottomKey(70, "K1", "VOL-");
-        uiBottomKey(136, "K2", "VOL+");
-        uiBottomKey(202, "K3", "PLAY");
-        uiBottomKey(268, "K4", "NEXT");
-        uiBottomKey(334, "SW", "BACK");
+        uiBottomKey(4, "JOY", "TRK/VOL");
+        uiBottomKey(86, "SW", "PLAY");
+        uiBottomKey(148, "K1", "-5s");
+        uiBottomKey(203, "K2", "+5s");
+        uiBottomKey(258, "K3", "LOOP");
+        uiBottomKey(320, "K4", "BACK");
     } else if (g_mode == MODE_PHYSICS) {
         uiBottomKey(4, "JOY", "ADJ");
         uiBottomKey(88, "K3", "PLAY");
@@ -3971,80 +3984,61 @@ static void music_enter() {
     g_player_pos_ms = 0;
     g_player_dur_ms = 0;
     player_apply_volume();
+    g_music_dirty = true;
+    g_music_next_draw = 0;
     g_mode = MODE_MUSIC;
-}
-
-static void music_format_time(uint32_t ms, char *b, size_t n) {
-    snprintf(b, n, "%u:%02u", (unsigned)(ms / 60000), (unsigned)((ms / 1000) % 60));
 }
 
 static void music_next() {
     if (g_music_count <= 0) return;
     g_music_sel = (g_player_track >= 0 ? g_player_track + 1 : g_music_sel) % g_music_count;
     player_start_at(0);
+    g_music_dirty = true;
+}
+
+static void music_prev() {
+    if (g_music_count <= 0) return;
+    g_music_sel = (g_music_sel + g_music_count - 1) % g_music_count;
+    player_start_at(0);
+    g_music_dirty = true;
 }
 
 static void drawMusic() {
-    drawStatus();
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    char b[96], t1[16], t2[16];
-    if (g_music_count == 0) {
-        u8g2_DrawStr(g, 16, 80, "No MP3/WAV/FLAC on SD card");
-        return;
+    ui_audio::View v;
+    v.empty = (g_music_count == 0);
+    v.track = g_music_sel + 1;
+    v.total = g_music_count;
+    v.volume = g_volume;
+    v.posMs = g_player_pos_ms;
+    v.durMs = g_player_dur_ms;
+    v.level = g_player_level;
+    v.repeatMode = g_music_repeat;
+    v.running = g_player_running;
+    if (!v.empty) {
+        const char *fn = g_file_names[g_music_files[g_music_sel]];
+        v.title = fn;
+        v.format = music_format(fn);
     }
-    int idx = g_music_sel;
-    u8g2_DrawStr(g, 12, 54, "TRACK");
-    snprintf(b, sizeof(b), "%d/%d  %s", idx + 1, g_music_count, music_format(g_file_names[g_music_files[idx]]));
-    u8g2_DrawStr(g, 64, 54, b);
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    draw_wrapped_utf8(g_file_names[g_music_files[idx]], 12, 76, 376, 16, 1);
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
-    const char *state = g_player_running
-        ? (g_player_stage < 3 ? "LOADING" : "PLAYING")
-        : (g_player_paused ? "PAUSED" : (g_player_finished ? "FINISHED" : "STOP"));
-    u8g2_DrawStr(g, 12, 98, state);
-    snprintf(b, sizeof(b), "VOL %d", g_volume);
-    u8g2_DrawStr(g, 300, 98, b);
-    music_format_time(g_player_pos_ms, t1, sizeof(t1));
-    music_format_time(g_player_dur_ms, t2, sizeof(t2));
-    snprintf(b, sizeof(b), "%s / %s", t1, t2);
-    u8g2_DrawStr(g, 12, 116, b);
-    uint32_t pct = g_player_dur_ms ? (uint32_t)((uint64_t)g_player_pos_ms * 100 / g_player_dur_ms) : 0;
-    if (pct > 100) pct = 100;
-    u8g2_DrawFrame(g, 12, 126, 376, 12);
-    if (pct) u8g2_DrawBox(g, 14, 128, 372 * pct / 100, 8);
-    // Level meter.
-    int lv = g_player_level * 10 / 32768;
-    for (int i = 0; i < 10; ++i) {
-        int h = 4 + i * 2;
-        int x = 300 + i * 8;
-        if (i < lv) u8g2_DrawBox(g, x, 116 - h, 5, h);
-        else u8g2_DrawFrame(g, x, 116 - h, 5, h);
-    }
-    // Playlist.
-    if (g_music_sel < g_music_off) g_music_off = g_music_sel;
-    if (g_music_sel >= g_music_off + 4) g_music_off = g_music_sel - 3;
-    for (int i = 0; i < 4 && g_music_off + i < g_music_count; ++i) {
-        int k = g_music_off + i;
-        int y = 166 + i * 24;
-        if (k == g_music_sel) u8g2_DrawFrame(g, 8, y - 13, 384, 20);
-        snprintf(b, sizeof(b), "%s%2d  %.30s", k == g_player_track ? ">" : " ", k + 1, g_file_names[g_music_files[k]]);
-        u8g2_DrawStr(g, 14, y, b);
-    }
-    u8g2_SetFont(g, u8g2_font_7x13_tf);
+    if (g_player_running) v.state = g_player_stage < 3 ? "LOADING" : "PLAYING";
+    else if (g_player_paused) v.state = "PAUSED";
+    else if (g_player_finished) v.state = "FINISHED";
+    else v.state = "STOP";
+    ui_audio::draw(g, v);
 }
 
 static void handleMusicInput() {
-    // Do not auto-advance here: selection is explicit (A/B), avoids racing
-    // with a just-started track from the HTTP test hook.
-    if (g_player_finished && !g_player_running) g_player_finished = false;
+    if (in.k4 && !prevIn.k4) { goBack(); prevIn = in; return; }
+
+    // Repeat modes are handled on natural EOF.
+    if (g_player_finished && !g_player_running) {
+        g_player_finished = false;
+        if (g_music_repeat == 2) { player_start_at(0); }
+        else if (g_music_repeat == 1) { music_next(); }
+    }
     if (g_music_count == 0) { prevIn = in; return; }
-    if (in.up && !prevIn.up) g_music_sel = (g_music_sel + g_music_count - 1) % g_music_count;
-    if (in.down && !prevIn.down) g_music_sel = (g_music_sel + 1) % g_music_count;
-    if (in.k1 && !prevIn.k1) { g_volume = g_volume >= 5 ? g_volume - 5 : 0; player_apply_volume(); }
-    if (in.k2 && !prevIn.k2) { g_volume = g_volume <= 95 ? g_volume + 5 : 100; player_apply_volume(); }
-    if (in.k3 && !prevIn.k3) {
+
+    // SW: play / pause / restart.
+    if (in.sw && !prevIn.sw) {
         if (g_player_running) {
             uint32_t p = g_player_pos_ms;
             player_stop(true);
@@ -4056,17 +4050,39 @@ static void handleMusicInput() {
             player_start_at(0);
         }
     }
-    if (in.k4 && !prevIn.k4) music_next();
-    if (in.x != 0 && !prevIn.x) {
-        int32_t target = (int32_t)g_player_pos_ms + (in.x > 0 ? 5000 : -5000);
-        if (target < 0) target = 0;
-        if (g_player_dur_ms && target > (int32_t)g_player_dur_ms) target = g_player_dur_ms;
-        bool was_running = g_player_running;
-        if (was_running) player_stop(true);
-        g_player_pos_ms = (uint32_t)target;
-        g_player_paused = true;
-        if (was_running) player_start_at(g_player_pos_ms);
+
+    // Joystick X: previous / next track.
+    if (in.x != 0 && prevIn.x == 0) {
+        if (in.x < 0) music_prev(); else music_next();
     }
+    // Joystick Y: volume.
+    if (in.up && !prevIn.up) { g_volume = g_volume <= 95 ? g_volume + 5 : 100; player_apply_volume(); }
+    if (in.down && !prevIn.down) { g_volume = g_volume >= 5 ? g_volume - 5 : 0; player_apply_volume(); }
+
+    // K1/K2: seek -/+5s. Do not act when both are held (C+D is voice recording).
+    if (!(in.k1 && in.k2)) {
+        int32_t delta = 0;
+        if (in.k1 && !prevIn.k1) delta = -5000;
+        if (in.k2 && !prevIn.k2) delta = 5000;
+        if (delta) {
+            int32_t target = (int32_t)g_player_pos_ms + delta;
+            if (target < 0) target = 0;
+            if (g_player_dur_ms && target > (int32_t)g_player_dur_ms) target = g_player_dur_ms;
+            bool was = g_player_running;
+            if (was) player_stop(true);
+            g_player_pos_ms = (uint32_t)target;
+            if (was) player_start_at(g_player_pos_ms);
+            else g_player_paused = true;
+        }
+    }
+
+    // K3: loop mode OFF -> ALL -> ONE.
+    if (in.k3 && !prevIn.k3) g_music_repeat = (g_music_repeat + 1) % 3;
+
+    if (in.x != prevIn.x || in.up != prevIn.up || in.down != prevIn.down ||
+        in.k1 != prevIn.k1 || in.k2 != prevIn.k2 ||
+        in.k3 != prevIn.k3 || in.k4 != prevIn.k4 || in.sw != prevIn.sw)
+        g_music_dirty = true;
     prevIn = in;
 }
 
@@ -8032,7 +8048,7 @@ static void gameTask(void *arg) {
         if (cd && !cd_prev && !g_cmd_busy) cmd_start();
         if (!cd && cd_prev && g_cmd_recording) g_cmd_stop = true;
         cd_prev = cd;
-        if (in.sw && !prevIn.sw) {
+        if (in.sw && !prevIn.sw && g_mode != MODE_MUSIC) {
             goBack();
             prevIn = in;
             continue;
@@ -8374,10 +8390,15 @@ static void gameTask(void *arg) {
             presentFrame();
         } else if (g_mode == MODE_MUSIC) {
             handleMusicInput();
-            u8g2_ClearBuffer(g);
-            u8g2_SetDrawColor(g, 1);
-            drawMusic();
-            presentFrame();
+            uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
+            if (g_music_dirty || (int32_t)(nowMs - g_music_next_draw) >= 0) {
+                u8g2_ClearBuffer(g);
+                u8g2_SetDrawColor(g, 1);
+                drawMusic();
+                presentFrame();
+                g_music_dirty = false;
+                g_music_next_draw = nowMs + 125; // 8 fps UI, audio unaffected
+            }
         } else if (g_mode == MODE_IMAGE) {
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);

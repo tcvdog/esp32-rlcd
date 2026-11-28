@@ -22,6 +22,7 @@ struct Status {
 enum class Ink { Black, White };
 
 void begin(u8g2_t *g, bool inverted = false);
+u8g2_t *g();
 void setInk(Ink ink);
 
 void topBar(const char *path, const Status &st);
@@ -34,6 +35,9 @@ void ditherRect(int x, int y, int w, int h, int density);
 void hatchRect(int x, int y, int w, int h);
 void shadow(int x, int y, int w, int h);
 void progress(int x, int y, int w, int value, int max);
+void segmentedBar(int x, int y, int w, int h, int value, int max, int segments);
+void levelMeter(int x, int y, int w, int h, int level, int zones);
+void dottedDivider(int x, int y, int w);
 
 void label12(int x, int y, const char *utf8);
 void label16(int x, int y, const char *utf8);
