@@ -4681,17 +4681,17 @@ static void drawPoemShort(const PoemCard &p, int idx) {
 static void drawChushi() {
     ui::setInk(ui::Ink::Black);
     ui::panel(6, 32, 388, 218);
-    ui::label16(14, 54, "出师表");
-    ui::label12(14, 72, "三国 · 诸葛亮");
-    int pages = poem_page_count(CHUSHI_ORIGINAL, 374, 6);
+    ui::label16(14, 52, "出师表");
+    ui::label12(78, 52, "三国 · 诸葛亮");
+    int pages = poem_page_count(CHUSHI_ORIGINAL, 374, 7);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
-    ui::mono(320, 54, b);
-    u8g2_DrawHLine(g, 12, 80, 376);
+    ui::mono(320, 52, b);
+    u8g2_DrawHLine(g, 12, 62, 376);
     const char *mask = g_word_reveal ? nullptr : CHUSHI_LEVELS[g_cloze_level - 1];
-    draw_cloze_overlay(CHUSHI_ORIGINAL, mask, g_cloze_page, 14, 88, 24, 6);
+    draw_cloze_overlay(CHUSHI_ORIGINAL, mask, g_cloze_page, 14, 72, 24, 7);
     char hint[96];
     snprintf(hint, sizeof(hint), "换篇 / 调级 / 翻页   %s",
              g_word_reveal ? "原文 K3 返回镂空" : "镂空遮挡 K3 显示原文");
