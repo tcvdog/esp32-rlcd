@@ -5036,12 +5036,12 @@ static void drawClozeTextCard(const ClozeText &t) {
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
     if (g_cloze_level == 6)
-        snprintf(hint, sizeof(hint), "%sL6 上下换随机点 · 左右翻页 · 末页提交 · 提示%d",
-                 t.alt ? "非课本获取 · " : "", g_hint_tokens);
+        snprintf(hint, sizeof(hint), "%sL6上下换随机 · 左右翻页 · 提示%d 扣%d",
+                 t.alt ? "非课本获取 · " : "", g_hint_tokens, g_level_reveals * 3);
     else
-        snprintf(hint, sizeof(hint), "%s左右翻页 · 末页右翻提交 · %s · 提示%d",
+        snprintf(hint, sizeof(hint), "%s左右翻页/末页提交 · %s · 提示%d 扣%d",
                  t.alt ? "非课本获取 · " : "",
-                 g_word_reveal ? "原文 K3 返回" : "K3 显示原文", g_hint_tokens);
+                 g_word_reveal ? "原文K3返回" : "K3显示原文", g_hint_tokens, g_level_reveals * 3);
     ui::label12(14, 264, hint);
 }
 
@@ -5153,10 +5153,12 @@ static void cloze_award_level(int level) {
     static const int base[7] = { 0, 10, 15, 20, 25, 30, 35 };
     if (level < 1 || level > 6) return;
     int delta = base[level];
+    int penalty = g_level_reveals * 3;
+    int net = delta - penalty;
     cloze_progress::add_score(g_cloze_group, g_cloze_idx, delta);
     int total = cloze_progress::total_score();
-    char msg[64];
-    snprintf(msg, sizeof(msg), "恭喜通过 L%d  +%d 分", level, delta);
+    char msg[80];
+    snprintf(msg, sizeof(msg), "L%d通过 +%d -%d = %+d分", level, delta, penalty, net);
     show_toast(msg);
     cloze_event("level_score", "JOY");
     cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
@@ -5538,7 +5540,6 @@ static void handleWordInput() {
                         int hintTotal = cloze_progress::total_score();
                         cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
                                               g_cloze_level, -3, hintTotal, g_level_reveals);
-                        show_toast("提示 -3 分");
                         g_word_reveal = true;
                         g_word_force_blank = true;
                         cloze_stats::toggleAnswer();
