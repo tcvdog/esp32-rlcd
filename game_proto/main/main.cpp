@@ -4953,9 +4953,13 @@ static void drawClozeTextCard(const ClozeText &t) {
     draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
-    snprintf(hint, sizeof(hint), "%s左右翻页 · 末页右翻提交 · %s · 提示%d",
-             t.alt ? "非课本获取 · " : "",
-             g_word_reveal ? "原文 K3 返回" : "K3 显示原文", g_hint_tokens);
+    if (g_cloze_level == 6)
+        snprintf(hint, sizeof(hint), "%sL6 上下换随机点 · 左右翻页 · 末页提交 · 提示%d",
+                 t.alt ? "非课本获取 · " : "", g_hint_tokens);
+    else
+        snprintf(hint, sizeof(hint), "%s左右翻页 · 末页右翻提交 · %s · 提示%d",
+                 t.alt ? "非课本获取 · " : "",
+                 g_word_reveal ? "原文 K3 返回" : "K3 显示原文", g_hint_tokens);
     ui::label12(14, 264, hint);
 }
 
@@ -5440,6 +5444,13 @@ static void handleWordInput() {
                 }
                 last_k3_ms = now;
             }
+        }
+        if (g_cloze_level == 6 && !g_word_reveal &&
+            ((in.up && !prevIn.up) || (in.down && !prevIn.down))) {
+            g_random_owner = nullptr;
+            g_random_page = -1;
+            g_word_force_blank = true;
+            cloze_event("reroll", "JOY");
         }
         if (in.x < 0 && prevIn.x >= 0) {
             if (g_cloze_page > 0) {
