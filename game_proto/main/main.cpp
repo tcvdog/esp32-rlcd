@@ -478,8 +478,11 @@ static float qcfDownAt = -10.0f;
 static int lastTapDir = 0;
 static float lastTapAt = -10.0f;
 
-enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18, MODE_VIDEO = 19, MODE_CLOZE_MENU = 20, MODE_CLOZE_LIST = 21, MODE_CLOZE_STATS = 22 };
-static int g_mode = MODE_MENU;
+enum { MODE_MENU = 0, MODE_GAME = 1, MODE_WORD = 2, MODE_SETTINGS = 3, MODE_VOICE = 4, MODE_NOTES = 5, MODE_PHYSICS = 6, MODE_INFO = 7, MODE_HELP = 8, MODE_FEEDBACK = 9, MODE_WIFI = 10, MODE_FILES = 11, MODE_IMAGE = 12, MODE_MUSIC = 13, MODE_SETTINGS_CTRL = 14, MODE_WORD_MENU = 15, MODE_SURVEY_MENU = 16, MODE_SURVEY = 17, MODE_SURVEY_REPORT = 18, MODE_VIDEO = 19, MODE_CLOZE_MENU = 20, MODE_CLOZE_LIST = 21, MODE_CLOZE_STATS = 22, MODE_USER_SELECT = 23 };
+static int g_mode = MODE_USER_SELECT;
+static int g_user = 0;
+static const char *g_user_names[3] = { "测试", "淘淘", "乐乐" };
+static int g_user_sel = 0;
 static int g_menu_sel = 0;
 static int g_secret_step = 0;
 static int64_t g_secret_t = 0;
@@ -3077,6 +3080,7 @@ static const char *uiPathForMode() {
         case MODE_CLOZE_MENU: return "SYS // FLASH // CLOZE";
         case MODE_CLOZE_LIST: return "SYS // FLASH // LIST";
         case MODE_CLOZE_STATS: return "SYS // FLASH // STATS";
+        case MODE_USER_SELECT: return "SYS // USER";
         case MODE_PHYSICS: return "SYS // PHYSICS";
         case MODE_SETTINGS: return "SYS // CONFIG";
         case MODE_SETTINGS_CTRL: return "SYS // CONFIG // OUTPUT";
@@ -3173,6 +3177,9 @@ static void uiDrawFrame() {
         uiBottomKey(300, "K4", "BACK");
     } else if (g_mode == MODE_CLOZE_STATS) {
         uiBottomKey(150, "K4", "BACK");
+    } else if (g_mode == MODE_USER_SELECT) {
+        uiBottomKey(6, "JOY", "MOVE");
+        uiBottomKey(160, "K3", "ENTER");
     } else if (g_mode == MODE_WORD_MENU) {
         uiBottomKey(6, "JOY", "MOVE");
         uiBottomKey(150, "K3", "OPEN");
@@ -4258,6 +4265,48 @@ static void drawFeedback() {
     draw_wrapped_utf8(g_fb_wh[0] ? g_fb_wh : "-", 38, 252, 350, 13, 1);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 300, 276, g_fb_time);
+}
+
+static void select_user(int id) {
+    if (id < 0) id = 0;
+    if (id > 2) id = 2;
+    g_user = id;
+    cloze_progress::set_user(id);
+    cloze_stats::set_user(id);
+    cloze_eventlog::set_user(id);
+    g_mode = MODE_MENU;
+}
+
+static void drawUserSelect() {
+    g_no_invert = false;
+    g_dark_ui = false;
+    ui::begin(g);
+    ui::Status st;
+    st.wifi = g_wifi_sta; st.sd = g_sd_ok; st.batteryPct = g_batt_pct;
+    st.charging = g_charging; st.time = g_clock;
+    ui::topBar("SYS // USER", st);
+    ui::setInk(ui::Ink::Black);
+    ui::label16(12, 48, "选择学习者");
+    ui::mono(150, 47, "WHO IS LEARNING");
+    u8g2_DrawHLine(g, 8, 56, 384);
+    for (int i = 0; i < 3; ++i) {
+        int y = 72 + i * 54;
+        bool sel = (i == g_user_sel);
+        ui::card(16, y, 368, 44, sel);
+        char n[8]; snprintf(n, sizeof(n), "%02d", i + 1);
+        ui::mono(28, y + 28, n);
+        ui::label16(78, y + 30, g_user_names[i]);
+        if (sel) ui::mono(340, y + 28, ">");
+        ui::setInk(ui::Ink::Black);
+    }
+    ui::label12(16, 250, "进度按学习者独立保存");
+}
+
+static void handleUserSelect() {
+    if (in.up && !prevIn.up) g_user_sel = (g_user_sel + 2) % 3;
+    if (in.down && !prevIn.down) g_user_sel = (g_user_sel + 1) % 3;
+    if (in.k3 && !prevIn.k3) select_user(g_user_sel);
+    prevIn = in;
 }
 
 static void drawMenu() {
@@ -9017,7 +9066,13 @@ static void gameTask(void *arg) {
                 prevIn = in;
             }
         }
-        if (g_mode == MODE_MENU) {
+        if (g_mode == MODE_USER_SELECT) {
+            handleUserSelect();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawUserSelect();
+            presentFrame();
+        } else if (g_mode == MODE_MENU) {
             g_back_hold = 0.0f;
             handleMenuInput();
             u8g2_ClearBuffer(g);

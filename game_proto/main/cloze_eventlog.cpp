@@ -7,7 +7,8 @@
 namespace cloze_eventlog {
 static uint32_t seq = 0;
 static uint32_t session = 0;
-static const char *PATH = "/sdcard/cloze_events.jsonl";
+static int activeUser = 0;
+static char PATH[48] = "/sdcard/cloze_events.jsonl";
 
 static void jstr(FILE *f, const char *s) {
     fputc('"', f);
@@ -19,6 +20,16 @@ static void jstr(FILE *f, const char *s) {
         else fputc(*p, f);
     }
     fputc('"', f);
+}
+
+void set_user(int user) {
+    if (user < 0) user = 0;
+    if (user > 2) user = 2;
+    activeUser = user;
+    if (user == 0) snprintf(PATH, sizeof(PATH), "/sdcard/cloze_events.jsonl");
+    else snprintf(PATH, sizeof(PATH), "/sdcard/cloze_events_u%d.jsonl", user);
+    session = 0;
+    seq = 0;
 }
 
 void begin(const char *clock) {

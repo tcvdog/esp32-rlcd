@@ -6,13 +6,21 @@
 namespace cloze_stats {
 static ClozeStatsData s;
 static bool s_loaded = false;
-static const char *CSV = "/sdcard/cloze_stats.csv";
+static int activeUser = 0;
+static char CSV[48] = "/sdcard/cloze_stats.csv";
+
+static const char *stats_ns() {
+    static char ns[10];
+    if (activeUser == 0) return "cloze";
+    snprintf(ns, sizeof(ns), "cloze%d", activeUser);
+    return ns;
+}
 
 static void ensure_loaded() {
     if (s_loaded) return;
     s_loaded = true;
     nvs_handle_t h;
-    if (nvs_open("cloze", NVS_READONLY, &h) == ESP_OK) {
+    if (nvs_open(stats_ns(), NVS_READONLY, &h) == ESP_OK) {
         size_t len = sizeof(s);
         if (nvs_get_blob(h, "stats", &s, &len) != ESP_OK) memset(&s, 0, sizeof(s));
         nvs_close(h);
@@ -23,10 +31,21 @@ static void ensure_loaded() {
 
 void load() { ensure_loaded(); }
 
+void set_user(int user) {
+    if (user < 0) user = 0;
+    if (user > 2) user = 2;
+    activeUser = user;
+    s_loaded = false;
+    memset(&s, 0, sizeof(s));
+    if (user == 0) snprintf(CSV, sizeof(CSV), "/sdcard/cloze_stats.csv");
+    else snprintf(CSV, sizeof(CSV), "/sdcard/cloze_stats_u%d.csv", user);
+    ensure_loaded();
+}
+
 void save() {
     ensure_loaded();
     nvs_handle_t h;
-    if (nvs_open("cloze", NVS_READWRITE, &h) == ESP_OK) {
+    if (nvs_open(stats_ns(), NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_blob(h, "stats", &s, sizeof(s));
         nvs_commit(h);
         nvs_close(h);

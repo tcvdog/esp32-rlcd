@@ -11,6 +11,7 @@ struct ClozeStatsData {
 
 namespace cloze_stats {
 void load();
+void set_user(int user);
 void save();
 void enter(int level);
 void exitSession();
