@@ -4855,7 +4855,8 @@ static void drawClozeTextCard(const ClozeText &t) {
     draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
-    snprintf(hint, sizeof(hint), "换篇 / 调级 / 翻页   %s",
+    snprintf(hint, sizeof(hint), "%s换篇 / 调级 / 翻页   %s",
+             t.alt ? "非课本获取 · " : "",
              g_word_reveal ? "原文 K3 返回镂空" :
              (g_cloze_level == 6 ? "随机镂空 K3 显示原文" : "镂空遮挡 K3 显示原文"));
     ui::label12(14, 264, hint);
@@ -5047,16 +5048,13 @@ static void drawClozeList() {
         else ui::label16(56, y + 18, p->title);
         ui::label12(230, y + 16, p->author);
         const ClozeText *ct = cloze_text_for(group, src);
-        if (!ct || !ct->original || !ct->original[0]) {
-            ui::label12(320, y + 16, "待补");
-        } else {
-            const ClozeProgressItem *pr = cloze_progress::get(group, src);
-            if (pr && pr->opens)
-                snprintf(b, sizeof(b), "x%u L%u", (unsigned)pr->opens, (unsigned)pr->level);
-            else
-                snprintf(b, sizeof(b), "x0");
-            ui::mono(320, y + 16, b);
-        }
+        const ClozeProgressItem *pr = cloze_progress::get(group, src);
+        if (pr && pr->opens)
+            snprintf(b, sizeof(b), "x%u L%u", (unsigned)pr->opens, (unsigned)pr->level);
+        else
+            snprintf(b, sizeof(b), "x0");
+        ui::mono(300, y + 16, b);
+        if (ct && ct->alt) ui::mono(372, y + 16, "*");
         ui::setInk(ui::Ink::Black);
     }
 }
