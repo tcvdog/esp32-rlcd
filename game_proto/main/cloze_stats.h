@@ -4,8 +4,8 @@
 struct ClozeStatsData {
     uint32_t enters;
     uint32_t exits;
-    uint32_t levelEnters[5];
-    uint32_t pageVisits[5][12];
+    uint32_t levelEnters[6];
+    uint32_t pageVisits[6][12];
     uint32_t answerToggles;
 };
 

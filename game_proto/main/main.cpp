@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdio.h>
+#include <string>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
@@ -2349,7 +2350,7 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
                 if (httpd_query_key_value(q, "cloze", cl, sizeof(cl)) == ESP_OK) {
                     g_cloze_level = atoi(cl);
                     if (g_cloze_level < 1) g_cloze_level = 1;
-                    if (g_cloze_level > 5) g_cloze_level = 5;
+                    if (g_cloze_level > 6) g_cloze_level = 6;
                 }
                 if (httpd_query_key_value(q, "page", pg, sizeof(pg)) == ESP_OK) g_cloze_page = atoi(pg);
                 else g_cloze_page = 0;
@@ -4783,6 +4784,32 @@ static const ClozeText *cloze_text_for(int group, int idx) {
     return nullptr;
 }
 
+static std::string g_random_mask;
+static const ClozeText *g_random_owner = nullptr;
+static int g_random_page = -1;
+
+static const char *cloze_random_mask(const ClozeText &t, int page) {
+    if (g_random_owner == &t && g_random_page == page) return g_random_mask.c_str();
+    g_random_owner = &t;
+    g_random_page = page;
+    g_random_mask.clear();
+    const char *p = t.original;
+    while (*p) {
+        int adv = 1;
+        uint32_t cp = utf8_code(p, &adv);
+        if (cp >= 0x4E00 && cp <= 0x9FFF) {
+            // L6: random positions, about 40-60% per page.
+            int pct = 40 + (int)(esp_random() % 21);
+            if ((int)(esp_random() % 100) < pct) g_random_mask += "○";
+            else g_random_mask.append(p, adv);
+        } else {
+            g_random_mask.append(p, adv);
+        }
+        p += adv;
+    }
+    return g_random_mask.c_str();
+}
+
 static void drawClozeTextCard(const ClozeText &t) {
     ui::setInk(ui::Ink::Black);
     ui::panel(6, 32, 388, 218);
@@ -4820,12 +4847,17 @@ static void drawClozeTextCard(const ClozeText &t) {
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 52, b);
     u8g2_DrawHLine(g, 12, 62, 376);
-    const char *mask = g_word_reveal ? nullptr : t.levels[g_cloze_level - 1];
+    const char *mask = nullptr;
+    if (!g_word_reveal) {
+        if (g_cloze_level == 6) mask = cloze_random_mask(t, g_cloze_page);
+        else mask = t.levels[g_cloze_level - 1];
+    }
     draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
     snprintf(hint, sizeof(hint), "换篇 / 调级 / 翻页   %s",
-             g_word_reveal ? "原文 K3 返回镂空" : "镂空遮挡 K3 显示原文");
+             g_word_reveal ? "原文 K3 返回镂空" :
+             (g_cloze_level == 6 ? "随机镂空 K3 显示原文" : "镂空遮挡 K3 显示原文"));
     ui::label12(14, 264, hint);
 }
 
@@ -4889,6 +4921,8 @@ static void cloze_enter_card(int group, int idx) {
     g_cloze_stat_page = -1;
     g_cloze_active = true;
     g_mode = MODE_WORD;
+    g_random_owner = nullptr;
+    g_random_page = -1;
     cloze_progress::open(group, idx);
     cloze_progress::state(group, idx, g_cloze_level, 0);
     cloze_stats::enter(g_cloze_level);
@@ -4912,6 +4946,8 @@ static void cloze_switch(int delta) {
     int pos = (cloze_pos(g_cloze_group, g_cloze_idx) + cnt + delta) % cnt;
     g_cloze_idx = cloze_order(g_cloze_group, pos);
     if (g_cloze_idx < 0) g_cloze_idx = 0;
+    g_random_owner = nullptr;
+    g_random_page = -1;
     g_cloze_list_sel = pos;
     g_cloze_list_page = pos / 6;
     g_cloze_page = 0;
@@ -5189,8 +5225,8 @@ static void handleWordInput() {
                 last_k3_ms = now;
             }
         }
-        if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 5 ? 1 : g_cloze_level + 1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); }
-        if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 5 : g_cloze_level - 1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); }
+        if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 6 ? 1 : g_cloze_level + 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); }
+        if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 6 : g_cloze_level - 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); }
         if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) --g_cloze_page; }
         if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; }
         if (in.k1 && !prevIn.k1) cloze_switch(-1);

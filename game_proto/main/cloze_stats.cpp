@@ -48,7 +48,7 @@ static void append(const char *time, const char *event, const char *group,
 void enter(int level) {
     ensure_loaded();
     ++s.enters;
-    if (level >= 1 && level <= 5) ++s.levelEnters[level - 1];
+    if (level >= 1 && level <= 6) ++s.levelEnters[level - 1];
     save();
 }
 
@@ -60,13 +60,13 @@ void exitSession() {
 
 void enterLevel(int level) {
     ensure_loaded();
-    if (level >= 1 && level <= 5) ++s.levelEnters[level - 1];
+    if (level >= 1 && level <= 6) ++s.levelEnters[level - 1];
     save();
 }
 
 void visitPage(int level, int page) {
     ensure_loaded();
-    if (level < 1 || level > 5 || page < 0 || page >= 12) return;
+    if (level < 1 || level > 6 || page < 0 || page >= 12) return;
     ++s.pageVisits[level - 1][page];
 }
 
