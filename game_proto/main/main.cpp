@@ -4611,6 +4611,10 @@ static uint32_t utf8_code(const char *p, int *adv);
 
 // Poetry: two clauses per line when both fit; otherwise one clause per line.
 // Every clause carries its trailing punctuation.
+static bool cloze_sentence_end(uint32_t cp) {
+    return cp == 0x3002 || cp == 0xFF01 || cp == 0xFF1F; // 。！？
+}
+
 static int build_cloze_lines(const char *text, int maxChars, ClozeLineSpan *out, int cap) {
     if (!text || !*text || cap <= 0) return 0;
     int n = 0;
@@ -4629,44 +4633,45 @@ static int build_cloze_lines(const char *text, int maxChars, ClozeLineSpan *out,
     }
     while (*p && n < cap) {
         if (*p == '\n') { ++p; continue; }
-        const char *curS = p;
-        int curChars = 0, curClauses = 0;
-        while (*p && *p != '\n' && n < cap) {
+        ClozeLineSpan clauses[96];
+        int nc = 0, sentChars = 0;
+        // Collect one sentence, split only at punctuation.
+        while (*p && *p != '\n' && nc < 96) {
             const char *cs = p;
             int cchars = 0;
+            bool sentEnd = false;
             while (*p && *p != '\n') {
                 int adv = 1; uint32_t cp = utf8_code(p, &adv);
                 p += adv; ++cchars;
-                if (cloze_clause_end(cp)) break;
-            }
-            // Very long clause: split by character budget.
-            while (cchars > maxChars) {
-                if (curChars > 0) {
-                    out[n++] = {curS, cs, curChars};
-                    if (n >= cap) break;
-                    curChars = 0; curClauses = 0;
+                if (cloze_clause_end(cp)) {
+                    sentEnd = cloze_sentence_end(cp);
+                    break;
                 }
-                const char *q = cs; int got = 0;
-                while (*q && *q != '\n' && got < maxChars) {
-                    int adv = 1; utf8_code(q, &adv); q += adv; ++got;
-                }
-                out[n++] = {cs, q, got};
-                if (n >= cap) break;
-                cchars -= got; cs = q;
             }
-            if (n >= cap) break;
-            if (cchars <= 0) continue;
-            if (curChars == 0) {
-                curS = cs; curChars = cchars; curClauses = 1;
-            } else if (curClauses < 2 && curChars + cchars <= maxChars) {
-                curChars += cchars; ++curClauses;
-            } else {
-                out[n++] = {curS, cs, curChars};
-                if (n >= cap) break;
-                curS = cs; curChars = cchars; curClauses = 1;
-            }
+            clauses[nc++] = {cs, p, cchars};
+            sentChars += cchars;
+            if (sentEnd) break;
         }
-        if (n < cap && curChars > 0) out[n++] = {curS, p, curChars};
+        if (nc == 0) { ++p; continue; }
+        // Whole sentence fits: keep it intact.
+        if (sentChars <= maxChars && nc <= 2) {
+            out[n++] = {clauses[0].s, clauses[nc - 1].e, sentChars};
+        } else {
+            const char *curS = clauses[0].s;
+            int curChars = 0, curClauses = 0;
+            for (int i = 0; i < nc && n < cap; ++i) {
+                int cc = clauses[i].chars;
+                if (curChars == 0) {
+                    curS = clauses[i].s; curChars = cc; curClauses = 1;
+                } else if (curClauses < 2 && curChars + cc <= maxChars) {
+                    curChars += cc; ++curClauses;
+                } else {
+                    out[n++] = {curS, clauses[i].s, curChars};
+                    curS = clauses[i].s; curChars = cc; curClauses = 1;
+                }
+            }
+            if (n < cap && curChars > 0) out[n++] = {curS, clauses[nc - 1].e, curChars};
+        }
         if (*p == '\n') ++p;
     }
     return n;
