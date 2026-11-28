@@ -63,4 +63,9 @@ int completed(int group) {
     for (int i = 0; i < 64; ++i) if (p[group][i].level >= 5) ++n;
     return n;
 }
+
+bool is_completed(int group, int idx) {
+    const ClozeProgressItem *q = get(group, idx);
+    return q && q->level >= 5;
+}
 }

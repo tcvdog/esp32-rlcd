@@ -5173,36 +5173,35 @@ static void handleClozeList() {
 }
 
 static void drawClozeStats() {
-    const ClozeStatsData &d = cloze_stats::data();
     ui::setInk(ui::Ink::Black);
     ui::panel(6, 32, 388, 218);
     ui::label16(14, 52, "学习统计");
-    ui::mono(14, 72, "CLOZE // ANALYTICS");
-    char b[96];
-    snprintf(b, sizeof(b), "ENTER %u   EXIT %u", (unsigned)d.enters, (unsigned)d.exits);
-    ui::mono(14, 94, b);
-    snprintf(b, sizeof(b), "ANSWER K3 %u", (unsigned)d.answerToggles);
-    ui::mono(14, 112, b);
-    u8g2_DrawHLine(g, 12, 122, 376);
-    ui::mono(14, 140, "LEVEL ENTRIES");
-    for (int i = 0; i < 5; ++i) {
-        snprintf(b, sizeof(b), "L%d:%u", i + 1, (unsigned)d.levelEnters[i]);
-        ui::mono(14 + (i % 5) * 74, 156, b);
-    }
-    ui::mono(14, 178, "PAGE VISITS");
-    for (int i = 0; i < 5; ++i) {
-        char line[96] = {0};
-        int pos = 0;
-        for (int p = 0; p < 8; ++p) {
-            if (d.pageVisits[i][p] == 0) continue;
-            pos += snprintf(line + pos, sizeof(line) - pos, "P%d:%u ", p + 1,
-                            (unsigned)d.pageVisits[i][p]);
-            if (pos > 80) break;
+    const int totals[4] = { 14, 62, 63, 59 };
+    const char *stageNames[4] = { "小低", "小中", "初中", "高中" };
+    int done = 0;
+    for (int g = 1; g <= 4; ++g) done += cloze_progress::completed(g);
+    char b[64];
+    snprintf(b, sizeof(b), "198 篇 · 已完成 %d", done);
+    ui::label12(14, 72, b);
+    u8g2_DrawHLine(g, 12, 82, 376);
+
+    int gy = 92;
+    for (int g = 1; g <= 4; ++g) {
+        int count = totals[g - 1];
+        int rows = (count + 19) / 20;
+        ui::label12(8, gy + 8, stageNames[g - 1]);
+        for (int i = 0; i < count; ++i) {
+            int x = 46 + (i % 20) * 14;
+            int y = gy + (i / 20) * 11;
+            if (cloze_progress::is_completed(g, i)) {
+                u8g2_DrawBox(ui::g(), x, y, 8, 8);
+            } else {
+                u8g2_DrawFrame(ui::g(), x, y, 8, 8);
+            }
         }
-        if (line[0] == 0) snprintf(line, sizeof(line), "--");
-        snprintf(b, sizeof(b), "L%d %.80s", i + 1, line);
-        ui::label12(14, 190 + i * 12, b);
+        gy += rows * 11;
     }
+    ui::label12(14, 244, "□ 未完成    ■ 已完成");
 }
 
 static void handleClozeStats() {
