@@ -47,7 +47,7 @@ def token_spans(text):
     return spans
 
 def mask_level(text, spans, level):
-    pct = {1: .10, 2: .30, 3: .50, 4: .70, 5: 1.0}[level]
+    pct = {1: .20, 2: .40, 3: .60, 4: .80, 5: 1.0}[level]
     # Group token indices into sentences.
     sentences, cur = [], []
     for ti, (w, a, b) in enumerate(spans):
@@ -75,12 +75,12 @@ def mask_level(text, spans, level):
                 anchor = ti; break
         if anchor is not None: anchors.add(anchor)
         for ti in sent:
-            if ti == anchor: continue
+            if level < 3 and ti == anchor: continue
             w, a, b = spans[ti]
             cjk = [c for c in w if is_cjk(c)]
             if not cjk: continue
-            if len(cjk) > 4: continue
-            if all(c in STOP for c in cjk): continue
+            if level < 3 and len(cjk) > 4: continue
+            if level < 3 and all(c in STOP for c in cjk): continue
             if any(is_punct(c) for c in w): continue
             candidates.append(ti)
     # Distribute masks over 8 text bands so every page has some blanks.
@@ -98,7 +98,7 @@ def mask_level(text, spans, level):
         band_count = 0
         for ti in by_band[band]:
             if ti in selected: continue
-            if (ti - 1) in selected or (ti + 1) in selected: continue
+            if level < 3 and ((ti - 1) in selected or (ti + 1) in selected): continue
             _, a, b = spans[ti]
             n = sum(1 for i in range(a, b) if is_cjk(text[i]))
             if band_count > 0 and band_count + n > band_target + 4: continue
@@ -110,7 +110,7 @@ def mask_level(text, spans, level):
     if total < target:
         for ti in candidates:
             if ti in selected: continue
-            if (ti - 1) in selected or (ti + 1) in selected: continue
+            if level < 3 and ((ti - 1) in selected or (ti + 1) in selected): continue
             _, a, b = spans[ti]
             n = sum(1 for i in range(a, b) if is_cjk(text[i]))
             selected.add(ti); total += n

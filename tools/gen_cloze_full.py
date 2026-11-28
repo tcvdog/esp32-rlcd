@@ -130,7 +130,7 @@ def masks(text):
     spans=[]; pos=0
     for w in jieba.lcut(text): spans.append((w,pos,pos+len(w))); pos+=len(w)
     out=[]
-    for lv,pct in enumerate([.10,.30,.50,.70,1.0],1):
+    for lv,pct in enumerate([.20,.40,.60,.80,1.0],1):
         mask=[False]*len(text)
         if lv==5:
             for i,c in enumerate(text):
@@ -151,15 +151,15 @@ def masks(text):
                     if any(cjk(c) for c in w): anc=ti; break
                 if anc is not None: anchors.add(anc)
                 for ti in sent:
-                    if ti==anc: continue
+                    if lv < 3 and ti==anc: continue
                     w,a,b=spans[ti]; cw=[c for c in w if cjk(c)]
                     if not cw or len(cw)>4: continue
-                    if all(c in STOP for c in cw): continue
+                    if lv < 3 and all(c in STOP for c in cw): continue
                     if any(punct(c) for c in w): continue
                     cands.append(ti)
             rng.shuffle(cands); selected=set(); cnt=0
             for ti in cands:
-                if (ti-1) in selected or (ti+1) in selected: continue
+                if lv < 3 and ((ti-1) in selected or (ti+1) in selected): continue
                 w,a,b=spans[ti]; n=sum(1 for i in range(a,b) if cjk(text[i]))
                 selected.add(ti); cnt+=n
                 if cnt>=target: break
