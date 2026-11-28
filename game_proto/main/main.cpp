@@ -68,8 +68,8 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "cloze_stats.h"
 #include "cloze_progress.h"
 #include "cloze_content.h"
-#include "cloze_order.h"
 #include "cloze_text.h"
+static const int POEM_COUNT = 198;
 #include "cloze_font24.h"
 
 #include "ink_effect_frames.h"
@@ -4771,15 +4771,16 @@ static void cloze_note_page(int level, int page);
 static const char *cloze_group_name(int group);
 
 static const ClozeText *cloze_text_for(int group, int idx) {
+    if (group < 1 || group > 4) return nullptr;
+    const ClozeGroup &g = CLOZE_GROUPS[group - 1];
+    if (idx < 0 || idx >= g.count) return nullptr;
     switch (group) {
-        case 1: return (idx >= 0 && idx < 8) ? &CLOZE_PRIMARY_POEMS[idx] : nullptr;
-        case 2: return (idx >= 0 && idx < 2) ? &CLOZE_PRIMARY_CLASSICAL[idx] : nullptr;
-        case 3: return (idx >= 0 && idx < 6) ? &CLOZE_MIDDLE_POEMS[idx] : nullptr;
-        case 4: return (idx >= 0 && idx < 6) ? &CLOZE_MIDDLE_CLASSICAL[idx] : nullptr;
-        case 5: return (idx >= 0 && idx < 6) ? &CLOZE_HIGH_POEMS[idx] : nullptr;
-        case 6: return (idx >= 0 && idx < 6) ? &CLOZE_HIGH_CLASSICAL[idx] : nullptr;
-        default: return nullptr;
+        case 1: return &CLOZE_LOW[idx];
+        case 2: return &CLOZE_MIDHIGH[idx];
+        case 3: return &CLOZE_MIDDLE[idx];
+        case 4: return &CLOZE_HIGH[idx];
     }
+    return nullptr;
 }
 
 static void drawClozeTextCard(const ClozeText &t) {
@@ -4794,11 +4795,19 @@ static void drawClozeTextCard(const ClozeText &t) {
         if (ax > 190) ax = 190;
         ui::label12(ax, 52, t.author);
     }
-    bool poetry = (g_cloze_group == 1 || g_cloze_group == 3 || g_cloze_group == 5);
+    bool poetry = t.poetry != 0;
     g_cloze_large = poetry;
     int maxLines = poetry ? 5 : 7;
     int lineh = poetry ? 36 : 24;
     int by = poetry ? 84 : 72;
+    if (!t.original || !*t.original) {
+        ui::panel(6,32,388,218);
+        ui::label16(14,56,t.title);
+        ui::label12(14,78,t.author);
+        ui::label16(14,126,"全文待补");
+        ui::label12(14,152,"目录已收录，正文尚未校验录入");
+        return;
+    }
     int pages = poem_page_count(t.original, 374, maxLines);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
@@ -4829,16 +4838,8 @@ static void drawChushi() {
     drawClozeTextCard(t);
 }
 
-static int cloze_order(int group, int pos) {
-    if (group <= 0 || group > 6 || pos < 0 || pos >= 8) return pos;
-    return CLOZE_ORDER[group - 1][pos];
-}
-
-static int cloze_pos(int group, int src) {
-    if (group <= 0 || group > 6) return src;
-    for (int i = 0; i < 8; ++i) if (CLOZE_ORDER[group - 1][i] == src) return i;
-    return src;
-}
+static int cloze_order(int group, int pos) { (void)group; return pos; }
+static int cloze_pos(int group, int src) { (void)group; return src; }
 
 static int cloze_group_count(int group) {
     if (group <= 0) return 1;
@@ -4936,45 +4937,31 @@ static void cloze_note_page(int level, int page) {
 static void drawClozeMenu() {
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 42, "诗词古文");
-    ui::mono(112, 41, "CLOZE // CONTENT");
-    ui::mono(340, 41, "08");
+    ui::mono(112, 41, "CLOZE // STAGE");
+    ui::mono(340, 41, "05");
     u8g2_DrawHLine(g, 8, 48, 384);
-    const char *names[7] = {
-        "出师表", "小学古诗", "小学文言文", "初中古诗",
-        "初中文言文", "高中古诗", "高中文言文"
-    };
-    const char *subs[7] = {
-        "长篇 · 5 级镂空", "08 首", "02 篇", "06 首",
-        "06 篇", "06 首", "06 篇"
-    };
-    for (int i = 0; i < 7; ++i) {
-        int y = 56 + i * 27;
+    const char *names[5] = { "小学·低年级", "小学·中高年级", "初中", "高中", "学习统计" };
+    const char *subs[5] = { "14 篇", "62 篇", "63 篇", "59 篇", "进入/退出/页面" };
+    for (int i = 0; i < 5; ++i) {
+        int y = 58 + i * 38;
         bool sel = (i == g_cloze_menu_sel);
-        ui::card(10, y, 380, 24, sel);
+        ui::card(10, y, 380, 32, sel);
         char num[4]; snprintf(num, sizeof(num), "%02d", i + 1);
-        ui::mono(20, y + 17, num);
-        ui::label16(62, y + 18, names[i]);
-        ui::label12(270, y + 18, subs[i]);
+        ui::mono(20, y + 20, num);
+        ui::label16(62, y + 22, names[i]);
+        ui::label12(270, y + 22, subs[i]);
         ui::setInk(ui::Ink::Black);
     }
-    // Stats remains reachable as the 8th row; use a compact final row.
-    int y = 56 + 7 * 27;
-    bool sel = (g_cloze_menu_sel == 7);
-    ui::card(10, y, 380, 24, sel);
-    ui::mono(20, y + 17, "08");
-    ui::label16(62, y + 18, "学习统计");
-    ui::label12(270, y + 18, "进入/退出/页面");
-    ui::setInk(ui::Ink::Black);
 }
 
 static void handleClozeMenu() {
-    if (in.up && !prevIn.up) g_cloze_menu_sel = (g_cloze_menu_sel + 7) % 8;
-    if (in.down && !prevIn.down) g_cloze_menu_sel = (g_cloze_menu_sel + 1) % 8;
+    if (in.up && !prevIn.up) g_cloze_menu_sel = (g_cloze_menu_sel + 4) % 5;
+    if (in.down && !prevIn.down) g_cloze_menu_sel = (g_cloze_menu_sel + 1) % 5;
     if (in.k3 && !prevIn.k3) {
-        if (g_cloze_menu_sel == 0) cloze_enter_card(0, 0);
-        else if (g_cloze_menu_sel == 7) g_mode = MODE_CLOZE_STATS;
+        if (g_cloze_menu_sel == 0) cloze_enter_card(1, 0);
+        else if (g_cloze_menu_sel == 4) g_mode = MODE_CLOZE_STATS;
         else {
-            g_cloze_group = g_cloze_menu_sel;
+            g_cloze_group = g_cloze_menu_sel + 1;
             g_cloze_idx = 0;
             g_cloze_list_sel = 0;
             g_cloze_list_page = 0;
@@ -5023,12 +5010,17 @@ static void drawClozeList() {
         if (strlen(p->title) > 18) ui::label12(56, y + 17, p->title);
         else ui::label16(56, y + 18, p->title);
         ui::label12(230, y + 16, p->author);
-        const ClozeProgressItem *pr = cloze_progress::get(group, src);
-        if (pr && pr->opens)
-            snprintf(b, sizeof(b), "x%u L%u", (unsigned)pr->opens, (unsigned)pr->level);
-        else
-            snprintf(b, sizeof(b), "x0");
-        ui::mono(320, y + 16, b);
+        const ClozeText *ct = cloze_text_for(group, src);
+        if (!ct || !ct->original || !ct->original[0]) {
+            ui::label12(320, y + 16, "待补");
+        } else {
+            const ClozeProgressItem *pr = cloze_progress::get(group, src);
+            if (pr && pr->opens)
+                snprintf(b, sizeof(b), "x%u L%u", (unsigned)pr->opens, (unsigned)pr->level);
+            else
+                snprintf(b, sizeof(b), "x0");
+            ui::mono(320, y + 16, b);
+        }
         ui::setInk(ui::Ink::Black);
     }
 }
