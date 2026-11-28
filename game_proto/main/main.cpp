@@ -62,6 +62,8 @@ static I2cMasterBus g_i2c_static(14, 13, 0);
 #include "win_glyphs.h"
 #include "menu_glyphs.h"
 #include "word_cards.h"
+#include "poem_cards.h"
+#include "chushi_cards.h"
 
 #include "ink_effect_frames.h"
 
@@ -522,7 +524,9 @@ static int g_player_track = -1;
 static char g_player_path[300] = "";
 static volatile bool g_track_finished = false;
 static int g_word_idx = 0;
-static int g_word_level = 0; // 0 KET, 1 PET
+static int g_word_level = 0; // 0 KET,1 PET,2 MATH,3 PHYS,4 POEM
+static int g_cloze_level = 1;
+static int g_cloze_page = 0;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
@@ -2294,6 +2298,7 @@ static void survey_build_report();
 static void music_enter();
 static void music_stop();
 static void player_start_at(uint32_t start_ms);
+static int word_level_count(int level);
 static void wifi_enter();
 static void notes_enter();
 static esp_err_t ota_menu_get(httpd_req_t *req) {
@@ -2316,8 +2321,21 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
             char lv[8] = {0};
             if (httpd_query_key_value(q, "level", lv, sizeof(lv)) == ESP_OK) {
                 int l = atoi(lv);
-                g_word_level = l < 0 ? 0 : (l > 3 ? 3 : l);
+                g_word_level = l < 0 ? 0 : (l > 4 ? 4 : l);
                 g_word_idx = 0;
+                char ix[8] = {0};
+                if (httpd_query_key_value(q, "idx", ix, sizeof(ix)) == ESP_OK) {
+                    int iv = atoi(ix);
+                    g_word_idx = iv < 0 ? 0 : (iv > word_level_count(4) - 1 ? word_level_count(4) - 1 : iv);
+                }
+                char cl[8] = {0}, pg[8] = {0};
+                if (httpd_query_key_value(q, "cloze", cl, sizeof(cl)) == ESP_OK) {
+                    g_cloze_level = atoi(cl);
+                    if (g_cloze_level < 1) g_cloze_level = 1;
+                    if (g_cloze_level > 5) g_cloze_level = 5;
+                }
+                if (httpd_query_key_value(q, "page", pg, sizeof(pg)) == ESP_OK) g_cloze_page = atoi(pg);
+                else g_cloze_page = 0;
                 char rv[8] = {0};
                 g_word_reveal = !(httpd_query_key_value(q, "reveal", rv, sizeof(rv)) == ESP_OK && atoi(rv) == 0);
                 g_mode = MODE_WORD;
@@ -2977,7 +2995,7 @@ static void drawBackButton() {
 static const char *uiPathForMode() {
     switch (g_mode) {
         case MODE_WORD_MENU: return "SYS // FLASH";
-        case MODE_WORD: return "SYS // FLASH // CARD";
+        case MODE_WORD: return (g_word_level == 4) ? "SYS // FLASH // POEM" : "SYS // FLASH // CARD";
         case MODE_PHYSICS: return "SYS // PHYSICS";
         case MODE_SETTINGS: return "SYS // CONFIG";
         case MODE_SETTINGS_CTRL: return "SYS // CONFIG // OUTPUT";
@@ -3069,10 +3087,18 @@ static void uiDrawFrame() {
         uiBottomKey(150, "K3", "MENU");
         uiBottomKey(300, "SW", "BACK");
     } else if (g_mode == MODE_WORD) {
-        uiBottomKey(4, "JOY", "CARD");
-        uiBottomKey(110, "K3", "FLIP");
-        if (g_word_level < 2) uiBottomKey(210, "K2", "AUDIO");
-        uiBottomKey(318, "SW", "BACK");
+        if (g_word_level == 4) {
+            uiBottomKey(4, "JOY", "LV/PG");
+            uiBottomKey(82, "K1", "PREV");
+            uiBottomKey(156, "K2", "NEXT");
+            uiBottomKey(232, "K3", "ANSWER");
+            uiBottomKey(318, "K4", "BACK");
+        } else {
+            uiBottomKey(4, "JOY", "CARD");
+            uiBottomKey(110, "K3", "FLIP");
+            if (g_word_level < 2) uiBottomKey(210, "K2", "AUDIO");
+            uiBottomKey(318, "SW", "BACK");
+        }
     } else {
         uiBottomKey(6, "JOY", "SELECT");
         uiBottomKey(108, "K3", "OPEN");
@@ -4394,6 +4420,7 @@ static void handleSurvey() {
 
 static int word_level_count(int level) {
     if (level == 0 || level == 1) return 100;
+    if (level == 4) return POEM_COUNT + 1; // 出师表 + 10 首
     return 10;
 }
 
@@ -4402,10 +4429,10 @@ static void drawWordMenu() {
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 42, "闪卡记忆");
     ui::mono(110, 41, "FLASH // DECKS");
-    ui::mono(340, 41, "04");
+    ui::mono(340, 41, "05");
     u8g2_DrawHLine(g, 8, 48, 384);
-    const char *levels[4] = { "KET", "PET", "MATH", "PHYS" };
-    const char *subs[4] = { "100 句 · 英语基础", "100 句 · 英语进阶", "10 张 · 初中数学", "10 张 · 初中物理" };
+    const char *levels[5] = { "KET", "PET", "MATH", "PHYS", "诗词" };
+    const char *subs[5] = { "100 句 · 英语基础", "100 句 · 英语进阶", "10 张 · 初中数学", "10 张 · 初中物理", "11 篇 · 出师表验证" };
     const int xs[2] = { 10, 204 }, ys[2] = { 58, 130 };
     for (int i = 0; i < 4; ++i) {
         int x = xs[i % 2], y = ys[i / 2];
@@ -4417,16 +4444,24 @@ static void drawWordMenu() {
         ui::label12(x + 10, y + 50, subs[i]);
         ui::setInk(ui::Ink::Black);
     }
+    // Fifth deck: full-width, in the same industrial card style.
+    ui::card(10, 202, 380, 56, g_word_cat_sel == 4);
+    ui::mono(20, 220, "05");
+    ui::label16(62, 226, "诗词古文");
+    ui::label12(62, 248, "出师表 5 级镂空 + 10 首诗词");
+    ui::setInk(ui::Ink::Black);
 }
 
 static void handleWordMenu() {
-    if (in.up && !prevIn.up) g_word_cat_sel = (g_word_cat_sel + 2) % 4;
-    if (in.down && !prevIn.down) g_word_cat_sel = (g_word_cat_sel + 2) % 4;
-    if (in.x < 0 && prevIn.x >= 0) g_word_cat_sel ^= 1;
-    if (in.x > 0 && prevIn.x <= 0) g_word_cat_sel ^= 1;
+    if (in.up && !prevIn.up) g_word_cat_sel = (g_word_cat_sel + 4) % 5;
+    if (in.down && !prevIn.down) g_word_cat_sel = (g_word_cat_sel + 1) % 5;
+    if (in.x < 0 && prevIn.x >= 0) g_word_cat_sel = (g_word_cat_sel + 4) % 5;
+    if (in.x > 0 && prevIn.x <= 0) g_word_cat_sel = (g_word_cat_sel + 1) % 5;
     if (in.k3 && !prevIn.k3) {
         g_word_level = g_word_cat_sel;
         g_word_idx = 0;
+        g_cloze_level = 1;
+        g_cloze_page = 0;
         g_word_reveal = false;
         g_mode = MODE_WORD;
     }
@@ -4474,7 +4509,120 @@ static void draw_wrapped_english(const char *s, int x, int y, int maxw, int line
     if (line[0] && lines < maxlines) u8g2_DrawStr(g, x, y + lines * lineh, line);
 }
 
+static int poem_page_count(const char *text, int maxw, int maxLines) {
+    if (!text || !*text) return 1;
+    int lines = 1, chars = 0;
+    for (const char *p = text; *p; ) {
+        if (*p == '\n') { ++lines; chars = 0; ++p; continue; }
+        int b = utf8_len((unsigned char)*p);
+        if (chars >= 28) { ++lines; chars = 0; }
+        ++chars;
+        p += b;
+    }
+    return (lines + maxLines - 1) / maxLines;
+}
+
+static void draw_cloze_page(const char *text, int page, int x, int y, int lineh, int maxw, int maxLines) {
+    (void)maxw;
+    if (!text) return;
+    int line = 0, shown = 0;
+    const char *p = text;
+    while (*p && line < (page + 1) * maxLines) {
+        const char *start = p;
+        int chars = 0;
+        while (*p && *p != '\n' && chars < 28) {
+            p += utf8_len((unsigned char)*p);
+            ++chars;
+        }
+        if (line >= page * maxLines) {
+            char buf[512];
+            int n = (int)(p - start);
+            if (n > (int)sizeof(buf) - 1) n = sizeof(buf) - 1;
+            memcpy(buf, start, n); buf[n] = 0;
+            u8g2_DrawUTF8(g, x, y + shown * lineh, buf);
+            ++shown;
+        }
+        ++line;
+        if (*p == '\n') ++p;
+        else if (p == start) ++p;
+    }
+}
+
+static int poem_utf8_chars(const char *s) {
+    int n = 0;
+    for (const char *p = s; *p; p += utf8_len((unsigned char)*p)) ++n;
+    return n;
+}
+
+static void draw_masked_poem_line(const char *line, int x, int y, int maskChars) {
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_DrawUTF8(g, x, y, line);
+    if (g_word_reveal || maskChars <= 0) return;
+    int total = poem_utf8_chars(line);
+    if (total <= maskChars) return;
+    int skip = total - maskChars;
+    int cx = x;
+    int idx = 0;
+    for (const char *p = line; *p; ++idx) {
+        int b = utf8_len((unsigned char)*p);
+        char ch[8] = {0};
+        for (int i = 0; i < b && i < 7; ++i) ch[i] = p[i];
+        int cw = u8g2_GetUTF8Width(g, ch);
+        if (idx >= skip) {
+            u8g2_SetDrawColor(g, 1);
+            u8g2_DrawBox(g, cx - 1, y - 13, cw + 2, 17);
+            // Small white cut-out ticks so the mask reads as a physical card.
+            u8g2_SetDrawColor(g, 0);
+            u8g2_DrawPixel(g, cx + 2, y - 7);
+            u8g2_DrawPixel(g, cx + 5, y - 7);
+            u8g2_SetDrawColor(g, 1);
+        }
+        cx += cw;
+        p += b;
+    }
+}
+
+static void drawPoemShort(const PoemCard &p, int idx) {
+    ui::setInk(ui::Ink::Black);
+    ui::panel(6, 32, 388, 218);
+    ui::label16(16, 56, p.title);
+    ui::label12(16, 76, p.author);
+    ui::mono(330, 56, g_word_reveal ? "FULL" : "MASK");
+    u8g2_DrawHLine(g, 14, 84, 372);
+    for (int i = 0; i < 4; ++i)
+        draw_masked_poem_line(p.lines[i], 18, 112 + i * 27, g_word_reveal ? 0 : p.mask);
+    if (!g_word_reveal) ui::label12(18, 228, "镂空遮挡 · K3 揭晓");
+    else ui::label12(18, 228, "全文");
+    char b[40];
+    snprintf(b, sizeof(b), "POEM %d/%d", idx, POEM_COUNT);
+    ui::mono(18, 262, b);
+}
+
+static void drawChushi() {
+    ui::setInk(ui::Ink::Black);
+    ui::panel(6, 32, 388, 218);
+    ui::label16(14, 54, "出师表");
+    ui::label12(14, 72, "三国 · 诸葛亮");
+    int pages = poem_page_count(g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1], 374, 9);
+    if (g_cloze_page >= pages) g_cloze_page = pages - 1;
+    if (g_cloze_page < 0) g_cloze_page = 0;
+    char b[40];
+    snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
+    ui::mono(320, 54, b);
+    u8g2_DrawHLine(g, 12, 80, 376);
+    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    const char *body = g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1];
+    draw_cloze_page(body, g_cloze_page, 14, 96, 14, 374, 9);
+    ui::label12(14, 236, g_word_reveal ? "原文 · K3 返回镂空" : "镂空遮挡 · K3 显示原文");
+    ui::label12(14, 262, "换篇 / 调级 / 翻页");
+}
+
 static void drawWord() {
+    if (g_word_level == 4) {
+        if (g_word_idx == 0) drawChushi();
+        else drawPoemShort(POEM_CARDS[g_word_idx - 1], g_word_idx);
+        return;
+    }
     const WordCard &w = *word_card_at(g_word_level, g_word_idx);
     bool stem = (strcmp(w.level, "MATH") == 0 || strcmp(w.level, "PHYS") == 0);
     ui::setInk(ui::Ink::Black);
@@ -4547,6 +4695,18 @@ static void word_audio_toggle() {
 }
 
 static void handleWordInput() {
+    if (g_word_level == 4) {
+        if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
+        if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 5 ? 1 : g_cloze_level + 1; g_cloze_page = 0; }
+        if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 5 : g_cloze_level - 1; g_cloze_page = 0; }
+        if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) --g_cloze_page; }
+        if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; }
+        if (in.k1 && !prevIn.k1) { g_word_idx = (g_word_idx + word_level_count(4) - 1) % word_level_count(4); g_cloze_page = 0; g_word_reveal = false; }
+        if (in.k2 && !prevIn.k2) { g_word_idx = (g_word_idx + 1) % word_level_count(4); g_cloze_page = 0; g_word_reveal = false; }
+        if (in.k4 && !prevIn.k4) { g_mode = MODE_WORD_MENU; g_word_reveal = false; g_cloze_page = 0; }
+        prevIn = in;
+        return;
+    }
     if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
     if (in.k4 && !prevIn.k4 && g_word_level < 2) word_audio_toggle();
     if (in.up && !prevIn.up) { g_word_level = (g_word_level + 3) % 4; g_word_idx = 0; g_word_reveal = false; }
