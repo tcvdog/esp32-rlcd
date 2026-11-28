@@ -552,13 +552,15 @@ static bool g_cloze_large = false;
 static char g_toast_text[64];
 static uint32_t g_toast_until = 0;
 static uint32_t g_score_badge_until = 0;
-static int g_badge_level = 1, g_badge_base = 0, g_badge_penalty = 0, g_badge_net = 0;
+static int g_badge_level = 1, g_badge_base = 0, g_badge_penalty = 0, g_badge_net = 0, g_badge_hints = 0;
+static int g_badge_seconds = 0, g_badge_time_penalty = 0;
 static char g_snap_orig[4096];
 static char g_snap_mask[4096];
 static int g_hint_tokens = 3;
 static int g_level_reveals = 0;
 static int g_seen_pages = 0;
 static uint32_t g_hint_page_ms = 0;
+static uint32_t g_level_start_ms = 0;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
@@ -3228,8 +3230,9 @@ static void draw_toast() {
     ui::label12(x + 14, 128, g_toast_text);
 }
 
-static void show_score_badge(int level, int base, int penalty, int net) {
+static void show_score_badge(int level, int base, int penalty, int net, int hints, int seconds, int timePenalty) {
     g_badge_level = level; g_badge_base = base; g_badge_penalty = penalty; g_badge_net = net;
+    g_badge_hints = hints; g_badge_seconds = seconds; g_badge_time_penalty = timePenalty;
     g_score_badge_until = (uint32_t)(esp_timer_get_time() / 1000) + 2500;
 }
 
@@ -3250,16 +3253,18 @@ static void draw_score_badge() {
         if (deg) u8g2_DrawLine(ui::g(), px, py, x, y);
         px = x; py = y;
     }
-    char t[32], a[32], b[32], n[32];
+    char t[32], a[32], b[32], c[32], n[32];
     snprintf(t, sizeof(t), "L%d 通过", g_badge_level);
     snprintf(a, sizeof(a), "背诵得分 +%d", g_badge_base);
-    snprintf(b, sizeof(b), "提示减分 -%d", g_badge_penalty);
+    snprintf(b, sizeof(b), "提示%d次 减%d分", g_badge_hints, g_badge_penalty);
+    snprintf(c, sizeof(c), "用时%d:%02d 超时-%d", g_badge_seconds / 60, g_badge_seconds % 60, g_badge_time_penalty);
     snprintf(n, sizeof(n), "净分 +%d", g_badge_net);
     ui::setInk(ui::Ink::Black);
-    ui::label16(cx - ui::textWidth16(t) / 2, 125, t);
-    ui::label12(cx - ui::textWidth12(a) / 2, 151, a);
-    ui::label12(cx - ui::textWidth12(b) / 2, 171, b);
-    ui::label16(cx - ui::textWidth16(n) / 2, 201, n);
+    ui::label16(cx - ui::textWidth16(t) / 2, 118, t);
+    ui::label12(cx - ui::textWidth12(a) / 2, 142, a);
+    ui::label12(cx - ui::textWidth12(b) / 2, 162, b);
+    ui::label12(cx - ui::textWidth12(c) / 2, 182, c);
+    ui::label16(cx - ui::textWidth16(n) / 2, 210, n);
 }
 
 static void presentFrame() {
@@ -5071,14 +5076,16 @@ static void drawClozeTextCard(const ClozeText &t) {
     g_seen_pages |= (1 << g_cloze_page);
     draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
-    char hint[96];
+    char hint[192];
+    uint32_t nnow = (uint32_t)(esp_timer_get_time() / 1000);
+    int secs = (nnow >= g_level_start_ms) ? (int)((nnow - g_level_start_ms) / 1000) : 0;
     if (g_cloze_level == 6)
-        snprintf(hint, sizeof(hint), "%sL6上下换随机 · 左右翻页 · 提示%d 扣%d",
-                 t.alt ? "非课本获取 · " : "", g_hint_tokens, g_level_reveals * 3);
+        snprintf(hint, sizeof(hint), "%sL6上下换随机 · 左右翻页 · 提示%d次 减%d分 · 用时%d:%02d",
+                 t.alt ? "非课本获取 · " : "", g_level_reveals, g_level_reveals * 3, secs / 60, secs % 60);
     else
-        snprintf(hint, sizeof(hint), "%s左右翻页/末页提交 · %s · 提示%d 扣%d",
+        snprintf(hint, sizeof(hint), "%s左右翻页/末页提交 · %s · 提示%d次 减%d分 · 用时%d:%02d",
                  t.alt ? "非课本获取 · " : "",
-                 g_word_reveal ? "原文K3返回" : "K3显示原文", g_hint_tokens, g_level_reveals * 3);
+                 g_word_reveal ? "原文K3返回" : "K3显示原文", g_level_reveals, g_level_reveals * 3, secs / 60, secs % 60);
     ui::label12(14, 264, hint);
 }
 
@@ -5191,13 +5198,33 @@ static void cloze_award_level(int level) {
     if (level < 1 || level > 6) return;
     int delta = base[level];
     int penalty = g_level_reveals * 3;
-    int net = delta - penalty;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+    int elapsed = (now >= g_level_start_ms) ? (int)((now - g_level_start_ms) / 1000) : 0;
+    int pages = cloze_current_pages();
+    int freeSec = 120 + pages * 15;
+    int over = elapsed > freeSec ? elapsed - freeSec : 0;
+    int timePenalty = over / 45;
+    int cap = base[level] / 5;
+    if (timePenalty > cap) timePenalty = cap;
+    if (timePenalty < 0) timePenalty = 0;
     cloze_progress::add_score(g_cloze_group, g_cloze_idx, delta);
     int total = cloze_progress::total_score();
-    show_score_badge(level, delta, penalty, net);
+    if (timePenalty > 0) {
+        cloze_progress::add_score(g_cloze_group, g_cloze_idx, -timePenalty);
+        total = cloze_progress::total_score();
+        char td[64];
+        snprintf(td, sizeof(td), "用时%d:%02d，自由时限%d:%02d", elapsed / 60, elapsed % 60,
+                 freeSec / 60, freeSec % 60);
+        cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
+                              level, -timePenalty, total, g_level_reveals, "time", td);
+    }
+    int net = delta - penalty - timePenalty;
+    show_score_badge(level, delta, penalty, net, g_level_reveals, elapsed, timePenalty);
     cloze_event("level_score", "JOY");
+    char ld[32];
+    snprintf(ld, sizeof(ld), "通过L%d", level);
     cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
-                          level, delta, total, g_level_reveals);
+                          level, delta, total, g_level_reveals, "level", ld);
 }
 
 static void cloze_submit_level() {
@@ -5225,6 +5252,7 @@ static void cloze_submit_level() {
     g_level_reveals = 0;
     g_hint_tokens = 3;
     g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    g_level_start_ms = g_hint_page_ms;
     cloze_save_progress();
     cloze_event("level_up", "JOY");
 }
@@ -5245,6 +5273,7 @@ static void cloze_enter_card(int group, int idx) {
     g_random_page = -1;
     cloze_eventlog::begin(g_clock);
     g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    g_level_start_ms = g_hint_page_ms;
     const ClozeText *entry = cloze_text_for(group, idx);
     if (entry) {
         snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", entry->original ? entry->original : "");
@@ -5291,6 +5320,7 @@ static void cloze_switch(int delta) {
     cloze_progress::open(g_cloze_group, g_cloze_idx);
     cloze_save_progress();
     g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    g_level_start_ms = g_hint_page_ms;
     cloze_stats::enter(g_cloze_level);
     cloze_append("enter");
     cloze_event("enter", "K1/K2");
@@ -5573,8 +5603,15 @@ static void handleWordInput() {
                         ++g_level_reveals;
                         cloze_progress::add_score(g_cloze_group, g_cloze_idx, -3);
                         int hintTotal = cloze_progress::total_score();
+                        char hd[64];
+                        snprintf(hd, sizeof(hd), "第%d次使用原文，本级共减%d", g_level_reveals,
+                                 g_level_reveals * 3);
                         cloze_eventlog::score(g_clock, cloze_group_name(g_cloze_group), cloze_title(),
-                                              g_cloze_level, -3, hintTotal, g_level_reveals);
+                                              g_cloze_level, -3, hintTotal, g_level_reveals, "hint", hd);
+                        char warn[64];
+                        snprintf(warn, sizeof(warn), "提示扣分 -3 · 第%d次 · 共%d", g_level_reveals,
+                                 g_level_reveals * 3);
+                        show_toast(warn);
                         g_word_reveal = true;
                         g_word_force_blank = true;
                         cloze_stats::toggleAnswer();

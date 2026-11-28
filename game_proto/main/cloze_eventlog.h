@@ -9,5 +9,6 @@ void log(const char *clock, const char *event, const char *button,
          int tokens, const char *original, const char *masked);
 const char *path();
 void score(const char *clock, const char *group, const char *title,
-           int level, int delta, int total, int reveals);
+           int level, int delta, int total, int reveals,
+           const char *reason, const char *detail);
 }
