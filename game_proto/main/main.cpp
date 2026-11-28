@@ -4515,7 +4515,7 @@ static int poem_page_count(const char *text, int maxw, int maxLines) {
     for (const char *p = text; *p; ) {
         if (*p == '\n') { ++lines; chars = 0; ++p; continue; }
         int b = utf8_len((unsigned char)*p);
-        if (chars >= 28) { ++lines; chars = 0; }
+        if (chars >= 20) { ++lines; chars = 0; }
         ++chars;
         p += b;
     }
@@ -4530,7 +4530,7 @@ static void draw_cloze_page(const char *text, int page, int x, int y, int lineh,
     while (*p && line < (page + 1) * maxLines) {
         const char *start = p;
         int chars = 0;
-        while (*p && *p != '\n' && chars < 28) {
+        while (*p && *p != '\n' && chars < 20) {
             p += utf8_len((unsigned char)*p);
             ++chars;
         }
@@ -4555,7 +4555,7 @@ static int poem_utf8_chars(const char *s) {
 }
 
 static void draw_masked_poem_line(const char *line, int x, int y, int maskChars) {
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
     u8g2_DrawUTF8(g, x, y, line);
     if (g_word_reveal || maskChars <= 0) return;
     int total = poem_utf8_chars(line);
@@ -4570,11 +4570,11 @@ static void draw_masked_poem_line(const char *line, int x, int y, int maskChars)
         int cw = u8g2_GetUTF8Width(g, ch);
         if (idx >= skip) {
             u8g2_SetDrawColor(g, 1);
-            u8g2_DrawBox(g, cx - 1, y - 13, cw + 2, 17);
+            u8g2_DrawBox(g, cx - 1, y - 17, cw + 2, 22);
             // Small white cut-out ticks so the mask reads as a physical card.
             u8g2_SetDrawColor(g, 0);
-            u8g2_DrawPixel(g, cx + 2, y - 7);
-            u8g2_DrawPixel(g, cx + 5, y - 7);
+            u8g2_DrawPixel(g, cx + 2, y - 10);
+            u8g2_DrawPixel(g, cx + 6, y - 10);
             u8g2_SetDrawColor(g, 1);
         }
         cx += cw;
@@ -4590,7 +4590,7 @@ static void drawPoemShort(const PoemCard &p, int idx) {
     ui::mono(330, 56, g_word_reveal ? "FULL" : "MASK");
     u8g2_DrawHLine(g, 14, 84, 372);
     for (int i = 0; i < 4; ++i)
-        draw_masked_poem_line(p.lines[i], 18, 112 + i * 27, g_word_reveal ? 0 : p.mask);
+        draw_masked_poem_line(p.lines[i], 18, 112 + i * 29, g_word_reveal ? 0 : p.mask);
     if (!g_word_reveal) ui::label12(18, 228, "镂空遮挡 · K3 揭晓");
     else ui::label12(18, 228, "全文");
     char b[40];
@@ -4603,16 +4603,16 @@ static void drawChushi() {
     ui::panel(6, 32, 388, 218);
     ui::label16(14, 54, "出师表");
     ui::label12(14, 72, "三国 · 诸葛亮");
-    int pages = poem_page_count(g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1], 374, 9);
+    int pages = poem_page_count(g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1], 374, 7);
     if (g_cloze_page >= pages) g_cloze_page = pages - 1;
     if (g_cloze_page < 0) g_cloze_page = 0;
     char b[40];
     snprintf(b, sizeof(b), "L%d  %d/%d", g_cloze_level, g_cloze_page + 1, pages);
     ui::mono(320, 54, b);
     u8g2_DrawHLine(g, 12, 80, 376);
-    u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
+    u8g2_SetFont(g, u8g2_font_wqy16_t_gb2312);
     const char *body = g_word_reveal ? CHUSHI_ORIGINAL : CHUSHI_LEVELS[g_cloze_level - 1];
-    draw_cloze_page(body, g_cloze_page, 14, 96, 14, 374, 9);
+    draw_cloze_page(body, g_cloze_page, 14, 98, 20, 374, 7);
     ui::label12(14, 236, g_word_reveal ? "原文 · K3 返回镂空" : "镂空遮挡 · K3 显示原文");
     ui::label12(14, 262, "换篇 / 调级 / 翻页");
 }
