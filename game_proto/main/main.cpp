@@ -2290,6 +2290,8 @@ static void survey_build_report();
 static void music_enter();
 static void music_stop();
 static void player_start_at(uint32_t start_ms);
+static void wifi_enter();
+static void notes_enter();
 static esp_err_t ota_menu_get(httpd_req_t *req) {
     char q[64] = {0};
     char v[16] = {0};
@@ -2325,7 +2327,18 @@ static esp_err_t ota_menu_get(httpd_req_t *req) {
             char st[8] = {0};
             if (httpd_query_key_value(q, "start", st, sizeof(st)) == ESP_OK && atoi(st)) survey_start();
         }
-        else if (sel == 5) g_mode = MODE_SETTINGS;
+        else if (sel == 5) {
+            char sub[8] = {0};
+            int sv = 0;
+            if (httpd_query_key_value(q, "sub", sub, sizeof(sub)) == ESP_OK) sv = atoi(sub);
+            if (sv == 0) g_mode = MODE_SETTINGS;
+            else if (sv == 1) g_mode = MODE_SETTINGS_CTRL;
+            else if (sv == 2) wifi_enter();
+            else if (sv == 3) { g_info_page = 0; g_mode = MODE_INFO; }
+            else if (sv == 4) g_mode = MODE_HELP;
+            else if (sv == 5) { notes_enter(); g_mode = MODE_NOTES; }
+            else if (sv == 6) g_mode = MODE_FEEDBACK;
+        }
     }
     httpd_resp_sendstr(req, "OK");
     return ESP_OK;
@@ -3013,6 +3026,35 @@ static void uiDrawFrame() {
         uiBottomKey(166, "K4", "RESET");
         uiBottomKey(242, "C/D", "PAGE");
         uiBottomKey(324, "SW", "BACK");
+    } else if (g_mode == MODE_INFO) {
+        uiBottomKey(4, "JOY", "PAGE");
+        uiBottomKey(150, "K4", "BACK");
+        uiBottomKey(310, "SW", "BACK");
+    } else if (g_mode == MODE_SETTINGS_CTRL) {
+        uiBottomKey(4, "JOY", "ADJ");
+        uiBottomKey(100, "K3", "TEST");
+        uiBottomKey(196, "K4", "RESET");
+        uiBottomKey(310, "SW", "BACK");
+    } else if (g_mode == MODE_WIFI) {
+        uiBottomKey(4, "JOY", "SELECT");
+        uiBottomKey(108, "K3", "CONNECT");
+        uiBottomKey(220, "K4", "SCAN");
+        uiBottomKey(318, "SW", "BACK");
+    } else if (g_mode == MODE_HELP || g_mode == MODE_NOTES || g_mode == MODE_FEEDBACK) {
+        uiBottomKey(4, "JOY", "SCROLL");
+        uiBottomKey(160, "SW", "BACK");
+    } else if (g_mode == MODE_SURVEY_MENU) {
+        uiBottomKey(4, "JOY", "SELECT");
+        uiBottomKey(150, "K3", "START");
+        uiBottomKey(300, "SW", "BACK");
+    } else if (g_mode == MODE_SURVEY) {
+        uiBottomKey(4, "JOY", "SELECT");
+        uiBottomKey(150, "K3", "NEXT");
+        uiBottomKey(300, "SW", "BACK");
+    } else if (g_mode == MODE_SURVEY_REPORT) {
+        uiBottomKey(4, "JOY", "SCROLL");
+        uiBottomKey(150, "K3", "MENU");
+        uiBottomKey(300, "SW", "BACK");
     } else if (g_mode == MODE_WORD) {
         uiBottomKey(4, "JOY", "CARD");
         uiBottomKey(110, "K3", "FLIP");
@@ -3069,6 +3111,9 @@ static const char *reset_reason_str(esp_reset_reason_t r) {
 
 static void drawInfo() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 34, 396, 212);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     char b[96];
@@ -3130,7 +3175,6 @@ static void drawInfo() {
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     snprintf(b, sizeof(b), "PAGE %d/4   UP/DOWN", g_info_page + 1); u8g2_DrawStr(g, 8, 252, b);
-    u8g2_DrawStr(g, 8, 276, "B: BACK    SW: BACK");
     u8g2_DrawStr(g, 8, 292, "Compact hardware / software info");
 }
 
@@ -3511,15 +3555,12 @@ static void drawFiles() {
             u8g2_DrawStr(g, 348, y, b);
             if (i == g_file_sel) u8g2_DrawFrame(g, 8, y - 13, 384, 18);
         }
-        u8g2_DrawStr(g, 8, 292, "SW: BACK");
     } else {
         u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
         draw_wrapped_utf8(g_file_title, 8, 32, 384, 16, 1);
         if (g_file_is_txt) {
             draw_wrapped_utf8(g_file_preview, 8, 52, 384, 16, 13);
             u8g2_SetFont(g, u8g2_font_7x13_tf);
-            u8g2_DrawStr(g, 8, 276, "UP/DOWN PAGE  A TOP");
-            u8g2_DrawStr(g, 8, 292, "SW: BACK");
         } else if (g_file_is_wav) {
             draw_wrapped_utf8(g_file_preview, 8, 52, 384, 16, 8);
             int total = g_wav_total ? g_wav_total : 1;
@@ -3529,7 +3570,6 @@ static void drawFiles() {
             u8g2_DrawBox(g, 10, 226, 380 * pct / 100, 12);
             char b[48]; snprintf(b, sizeof(b), "%d%%  %s", pct, g_wav_playing ? "PLAYING" : "STOP");
             u8g2_DrawStr(g, 12, 254, b);
-            u8g2_DrawStr(g, 8, 288, "A: PLAY/STOP    SW: BACK");
         } else if (g_file_is_mp3) {
             draw_wrapped_utf8(g_file_preview, 8, 52, 384, 16, 8);
             int total = g_mp3_total ? g_mp3_total : 1;
@@ -3539,15 +3579,12 @@ static void drawFiles() {
             u8g2_DrawBox(g, 10, 226, 380 * pct / 100, 12);
             char b[48]; snprintf(b, sizeof(b), "%d%%  %s", pct, g_mp3_playing ? "PLAYING" : "STOP");
             u8g2_DrawStr(g, 12, 254, b);
-            u8g2_DrawStr(g, 8, 288, "A: PLAY/STOP    SW: BACK");
         } else if (g_file_is_gif) {
             draw_wrapped_utf8(g_file_preview, 8, 52, 384, 16, 8);
             u8g2_SetFont(g, u8g2_font_7x13_tf);
-            u8g2_DrawStr(g, 8, 288, "A: VIEW    SW: BACK");
         } else {
             draw_wrapped_utf8(g_file_preview, 8, 52, 384, 16, 10);
             u8g2_SetFont(g, u8g2_font_7x13_tf);
-            u8g2_DrawStr(g, 8, 288, "SW: BACK");
         }
     }
 }
@@ -3954,7 +3991,6 @@ static void drawMusic() {
     char b[96], t1[16], t2[16];
     if (g_music_count == 0) {
         u8g2_DrawStr(g, 16, 80, "No MP3/WAV/FLAC on SD card");
-        u8g2_DrawStr(g, 8, 288, "SW: BACK");
         return;
     }
     int idx = g_music_sel;
@@ -4044,11 +4080,13 @@ static void drawImage() {
         }
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "SW: BACK");
 }
 
 static void drawHelp() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 218);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 8, 86, "摇杆左右：主目录翻页");
     u8g2_DrawUTF8(g, 8, 112, "摇杆上下：当前页选择入口");
@@ -4056,11 +4094,13 @@ static void drawHelp() {
     u8g2_DrawUTF8(g, 8, 164, "摇杆按下 SW：返回上一级");
     u8g2_DrawUTF8(g, 8, 190, "物理实验内：左右/上下调参数");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "SW: BACK");
 }
 
 static void drawFeedback() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 220);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 8, 56, g_fb_stage);
@@ -4084,7 +4124,6 @@ static void drawFeedback() {
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     draw_wrapped_utf8(g_fb_wh[0] ? g_fb_wh : "-", 38, 252, 350, 13, 1);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 276, "SW: BACK");
     u8g2_DrawStr(g, 300, 276, g_fb_time);
 }
 
@@ -4225,6 +4264,9 @@ static void survey_build_report() {
 
 static void drawSurveyReport() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 220);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     int total = survey_total();
     char b[96];
@@ -4259,7 +4301,6 @@ static void drawSurveyReport() {
         tips = nl + 1;
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "A: MENU   SW: BACK");
 }
 
 static void handleSurveyReport() {
@@ -4269,17 +4310,18 @@ static void handleSurveyReport() {
 
 static void drawSurveyMenu() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 214);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 24, 78, "调查问卷");
-    u8g2_DrawFrame(g, 16, 92, 368, 72);
+    ui::label16(20, 62, "调查问卷");
+    ui::panel(16, 92, 368, 72);
     u8g2_DrawUTF8(g, 32, 122, "前额叶修复调查");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 32, 146, "5 questions  |  self-rating 1-5");
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 16, 194, "自评问卷，不构成医学诊断。");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 252, "A: START");
-    u8g2_DrawStr(g, 8, 276, "B: BACK   SW: BACK");
 }
 
 static void handleSurveyMenu() {
@@ -4290,6 +4332,9 @@ static void handleSurveyMenu() {
 
 static void drawSurvey() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 220);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     char b[48];
     snprintf(b, sizeof(b), "Q%d / 5", g_survey_q + 1);
@@ -4314,7 +4359,6 @@ static void drawSurvey() {
         u8g2_DrawUTF8(g, 16, 274, "自评，不是医学诊断");
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "SW: BACK");
 }
 
 static void handleSurvey() {
@@ -4591,6 +4635,10 @@ static void handleSettingsMenu() {
 
 static void drawSettingsCtrl() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(8, 32, 384, 132);
+    ui::panel(8, 168, 384, 90);
+    ui::setInk(ui::Ink::Black);
     char b[32];
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
     u8g2_DrawUTF8(g, 24, 82, "音量");
@@ -4608,24 +4656,25 @@ static void drawSettingsCtrl() {
     u8g2_DrawUTF8(g, 16, 190, "音量：真实 ES8311 输出");
     u8g2_DrawUTF8(g, 16, 210, "亮度：ST7305 电子对比度");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 266, "A: TEST TONE   B: RESET");
-    u8g2_DrawStr(g, 8, 288, "SW: BACK");
 }
 
 static void handleSettingsCtrl() {
+    bool changed = false;
     if (in.up && !prevIn.up) g_set_sel = 0;
     if (in.down && !prevIn.down) g_set_sel = 1;
     if (g_set_sel == 0) {
-        if (in.x < 0 && prevIn.x >= 0) g_volume = (g_volume >= 5) ? g_volume - 5 : 0;
-        if (in.x > 0 && prevIn.x <= 0) g_volume = (g_volume <= 95) ? g_volume + 5 : 100;
+        if (in.x < 0 && prevIn.x >= 0) { g_volume = (g_volume >= 5) ? g_volume - 5 : 0; changed = true; }
+        if (in.x > 0 && prevIn.x <= 0) { g_volume = (g_volume <= 95) ? g_volume + 5 : 100; changed = true; }
     } else {
-        if (in.x < 0 && prevIn.x >= 0) g_contrast = (g_contrast >= 8) ? g_contrast - 8 : 0;
-        if (in.x > 0 && prevIn.x <= 0) g_contrast = (g_contrast <= 247) ? g_contrast + 8 : 255;
+        if (in.x < 0 && prevIn.x >= 0) { g_contrast = (g_contrast >= 8) ? g_contrast - 8 : 0; changed = true; }
+        if (in.x > 0 && prevIn.x <= 0) { g_contrast = (g_contrast <= 247) ? g_contrast + 8 : 255; changed = true; }
     }
     if (in.k3 && !prevIn.k3) playSfx(1);
-    if (in.k4 && !prevIn.k4) { g_volume = 100; g_contrast = 128; }
-    settings_apply();
-    settings_save();
+    if (in.k4 && !prevIn.k4) { g_volume = 100; g_contrast = 128; changed = true; }
+    if (changed) {
+        settings_apply();
+        settings_save();
+    }
     prevIn = in;
 }
 
@@ -4682,6 +4731,9 @@ static void wifi_connect_saved() {
 
 static void drawWifi() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 220);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
 
     if (g_wifi_view == 0) {
@@ -4699,7 +4751,6 @@ static void drawWifi() {
             if (i == g_wifi_sel) u8g2_DrawFrame(g, 12, y - 13, 376, 19);
         }
         u8g2_SetFont(g, u8g2_font_7x13_tf);
-        u8g2_DrawStr(g, 8, 288, "SW: BACK");
         return;
     }
 
@@ -4724,7 +4775,6 @@ static void drawWifi() {
         }
         u8g2_SetFont(g, u8g2_font_7x13_tf);
         u8g2_DrawStr(g, 8, 270, "A TYPE  B DEL  C OK  D CASE");
-        u8g2_DrawStr(g, 8, 288, "SW: BACK");
         return;
     }
 
@@ -4732,7 +4782,6 @@ static void drawWifi() {
     u8g2_DrawUTF8(g, 20, 82, g_wifi_ssid);
     u8g2_DrawUTF8(g, 20, 110, "密码已保存，正在连接...");
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 288, "SW: BACK");
 }
 
 static void handleWifiInput() {
@@ -4798,12 +4847,12 @@ static void __attribute__((unused)) notes_enter() {
 
 static void __attribute__((unused)) drawNotes() {
     drawStatus();
+    ui::setInk(ui::Ink::Black);
+    ui::panel(2, 32, 396, 220);
+    ui::setInk(ui::Ink::Black);
     u8g2_SetFont(g, u8g2_font_wqy12_t_gb2312);
-    u8g2_DrawUTF8(g, 160, 38, "录音记录");
     draw_wrapped_utf8(g_notes_buf ? g_notes_buf : "无内容", 12, 58 - g_notes_scroll * 16, 376, 16, 40);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 276, "UP/DOWN: SCROLL");
-    u8g2_DrawStr(g, 8, 292, "SW: BACK");
 }
 
 static void __attribute__((unused)) handleNotesInput() {
@@ -5117,19 +5166,16 @@ static void drawVoice() {
         draw_mic_level(240);
         u8g2_SetFont(g, u8g2_font_7x13_tf);
         u8g2_DrawStr(g, 8, 276, "C+D HOLD: TALK 60s");
-        u8g2_DrawStr(g, 8, 292, "SW: BACK");
         return;
     }
 
     u8g2_SetFont(g, u8g2_font_9x15_tf);
     u8g2_DrawStr(g, 20, 95, "C+D HOLD: TALK 60s");
-    u8g2_DrawStr(g, 20, 125, "RELEASE: SEND / SW: BACK");
     u8g2_DrawStr(g, 20, 155, "PC 192.168.3.39:8765");
     draw_mic_level(190);
     u8g2_SetFont(g, u8g2_font_7x13_tf);
     u8g2_DrawStr(g, 20, 220, g_voice_msg);
     u8g2_DrawStr(g, 8, 270, "SPEAKER + TRANSCRIPT + QWEN");
-    u8g2_DrawStr(g, 8, 288, "SW: BACK");
 }
 
 static void drawCmdOverlay() {
@@ -7807,7 +7853,6 @@ static void drawPhysicsMenu() {
         }
     }
     u8g2_SetFont(g, u8g2_font_7x13_tf);
-    u8g2_DrawStr(g, 8, 292, "SW: BACK");
 }
 
 static void handlePhysicsMenuInput() {
@@ -8042,7 +8087,39 @@ static void gameTask(void *arg) {
             g_no_invert = false;
             g_dark_ui = false;
             presentFrame();
-        } else if (g_mode == MODE_WORD) {
+        } else if (g_mode == MODE_INFO || g_mode == MODE_HELP) {
+            if (g_mode == MODE_INFO && in.up && !prevIn.up) g_info_page = (g_info_page + 3) % 4;
+            if (g_mode == MODE_INFO && in.down && !prevIn.down) g_info_page = (g_info_page + 1) % 4;
+            if (g_mode == MODE_INFO && in.k4 && !prevIn.k4) { g_mode = MODE_SETTINGS; prevIn = in; continue; }
+            if (updateBackChord(realDt)) {
+                g_mode = MODE_MENU;
+                prevIn = in;
+                continue;
+            }
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            if (g_mode == MODE_INFO) drawInfo(); else drawHelp();
+            presentFrame();
+            prevIn = in;
+        } else if (g_mode == MODE_WIFI) {
+            handleWifiInput();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawWifi();
+            presentFrame();
+        } else if (g_mode == MODE_SETTINGS) {
+            handleSettingsMenu();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawSettingsMenu();
+            presentFrame();
+        } else if (g_mode == MODE_SETTINGS_CTRL) {
+            handleSettingsCtrl();
+            u8g2_ClearBuffer(g);
+            u8g2_SetDrawColor(g, 1);
+            drawSettingsCtrl();
+            presentFrame();
+    } else if (g_mode == MODE_WORD) {
             handleWordInput();
             u8g2_ClearBuffer(g);
             u8g2_SetDrawColor(g, 1);
