@@ -549,6 +549,8 @@ static bool g_cloze_large = false;
 static char g_snap_orig[4096];
 static char g_snap_mask[4096];
 static int g_hint_tokens = 3;
+static int g_level_reveals = 0;
+static int g_seen_pages = 0;
 static uint32_t g_hint_page_ms = 0;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
@@ -3177,7 +3179,7 @@ static void uiDrawFrame() {
         uiBottomKey(300, "K4", "BACK");
     } else if (g_mode == MODE_WORD) {
         if (g_word_level == 4) {
-            uiBottomKey(4, "JOY", "LV/PG");
+            uiBottomKey(4, "JOY", "PAGE");
             uiBottomKey(82, "K1", "PREV");
             uiBottomKey(156, "K2", "NEXT");
             uiBottomKey(232, "K3", "ANSWER");
@@ -4947,13 +4949,13 @@ static void drawClozeTextCard(const ClozeText &t) {
     }
     snprintf(g_snap_orig, sizeof(g_snap_orig), "%s", t.original ? t.original : "");
     snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", mask ? mask : (t.original ? t.original : ""));
+    g_seen_pages |= (1 << g_cloze_page);
     draw_cloze_overlay(t.original, mask, g_cloze_page, 14, by, lineh, maxLines);
     cloze_note_page(g_cloze_level, g_cloze_page);
     char hint[96];
-    snprintf(hint, sizeof(hint), "%s换篇 / 调级 / 翻页   %s   提示%d",
+    snprintf(hint, sizeof(hint), "%s左右翻页 · 末页右翻提交 · %s · 提示%d",
              t.alt ? "非课本获取 · " : "",
-             g_word_reveal ? "原文 K3 返回镂空" :
-             (g_cloze_level == 6 ? "随机镂空 K3 显示原文" : "镂空遮挡 K3 显示原文"), g_hint_tokens);
+             g_word_reveal ? "原文 K3 返回" : "K3 显示原文", g_hint_tokens);
     ui::label12(14, 264, hint);
 }
 
@@ -5022,6 +5024,75 @@ static void cloze_append(const char *event) {
                              cloze_title(), g_cloze_level, g_cloze_page);
 }
 
+static int cloze_current_pages() {
+    if (g_cloze_group <= 0) {
+        bool old = g_cloze_large;
+        g_cloze_large = false;
+        int p = poem_page_count(CHUSHI_ORIGINAL, 374, 7);
+        g_cloze_large = old;
+        return p;
+    }
+    const ClozeText *t = cloze_text_for(g_cloze_group, g_cloze_idx);
+    if (!t || !t->original || !*t->original) return 1;
+    bool old = g_cloze_large;
+    g_cloze_large = t->poetry != 0;
+    int p = poem_page_count(t->original, 374, g_cloze_large ? 5 : 7);
+    g_cloze_large = old;
+    return p;
+}
+
+static void cloze_load_state(int group, int idx) {
+    const ClozeProgressItem *p = cloze_progress::get(group, idx);
+    g_seen_pages = p ? p->seen : 0;
+    g_level_reveals = p ? p->reveals : 0;
+    if (p && p->done) {
+        g_cloze_level = 1;
+        g_cloze_page = 0;
+        g_seen_pages = 0;
+        g_level_reveals = 0;
+    } else {
+        g_cloze_level = p && p->level ? p->level : 1;
+        if (g_cloze_level > 5) g_cloze_level = 5;
+        g_cloze_page = p ? p->page : 0;
+    }
+    g_hint_tokens = 3 - g_level_reveals;
+    if (g_hint_tokens < 0) g_hint_tokens = 0;
+}
+
+static void cloze_save_progress() {
+    const ClozeProgressItem *old = cloze_progress::get(g_cloze_group, g_cloze_idx);
+    int done = old ? old->done : 0;
+    cloze_progress::update(g_cloze_group, g_cloze_idx, g_cloze_level,
+                           g_cloze_page, g_seen_pages, g_level_reveals, done);
+}
+
+static void cloze_submit_level() {
+    int pages = cloze_current_pages();
+    if (pages < 1) pages = 1;
+    if (pages > 16) pages = 16;
+    unsigned mask = (pages >= 16) ? 0xFFFFu : ((1u << pages) - 1u);
+    g_seen_pages |= (1 << g_cloze_page);
+    if ((g_seen_pages & mask) != mask) {
+        cloze_event("level_incomplete", "JOY");
+        return;
+    }
+    if (g_cloze_level >= 5) {
+        cloze_progress::update(g_cloze_group, g_cloze_idx, g_cloze_level, 0,
+                               g_seen_pages, g_level_reveals, 1);
+        cloze_event("level_complete", "JOY");
+        g_word_reveal = false;
+        return;
+    }
+    ++g_cloze_level;
+    g_cloze_page = 0;
+    g_seen_pages = 0;
+    g_level_reveals = 0;
+    g_hint_tokens = 3;
+    g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    cloze_save_progress();
+    cloze_event("level_up", "JOY");
+}
+
 static void cloze_enter_card(int group, int idx) {
     g_cloze_group = group;
     g_cloze_idx = idx;
@@ -5029,15 +5100,14 @@ static void cloze_enter_card(int group, int idx) {
     g_cloze_list_page = g_cloze_list_sel / 6;
     g_word_level = 4;
     g_word_reveal = false;
-    g_cloze_page = 0;
     g_cloze_stat_level = -1;
     g_cloze_stat_page = -1;
+    cloze_load_state(group, idx);
     g_cloze_active = true;
     g_mode = MODE_WORD;
     g_random_owner = nullptr;
     g_random_page = -1;
     cloze_eventlog::begin(g_clock);
-    g_hint_tokens = 3;
     g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
     const ClozeText *entry = cloze_text_for(group, idx);
     if (entry) {
@@ -5048,7 +5118,7 @@ static void cloze_enter_card(int group, int idx) {
         snprintf(g_snap_mask, sizeof(g_snap_mask), "%s", CHUSHI_LEVELS[g_cloze_level - 1]);
     }
     cloze_progress::open(group, idx);
-    cloze_progress::state(group, idx, g_cloze_level, 0);
+    cloze_save_progress();
     cloze_stats::enter(g_cloze_level);
     cloze_append("enter");
     cloze_event("enter", "K3");
@@ -5056,8 +5126,7 @@ static void cloze_enter_card(int group, int idx) {
 
 static void cloze_exit_card() {
     if (!g_cloze_active) return;
-    cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, g_cloze_page);
-    cloze_progress::save();
+    cloze_save_progress();
     cloze_stats::exitSession();
     cloze_append("exit");
     cloze_event("exit", "K4");
@@ -5076,13 +5145,12 @@ static void cloze_switch(int delta) {
     g_random_page = -1;
     g_cloze_list_sel = pos;
     g_cloze_list_page = pos / 6;
-    g_cloze_page = 0;
     g_word_reveal = false;
     g_cloze_stat_level = -1;
     g_cloze_stat_page = -1;
+    cloze_load_state(g_cloze_group, g_cloze_idx);
     cloze_progress::open(g_cloze_group, g_cloze_idx);
-    cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0);
-    g_hint_tokens = 3;
+    cloze_save_progress();
     g_hint_page_ms = (uint32_t)(esp_timer_get_time() / 1000);
     cloze_stats::enter(g_cloze_level);
     cloze_append("enter");
@@ -5094,8 +5162,9 @@ static void cloze_note_page(int level, int page) {
     if (level == g_cloze_stat_level && page == g_cloze_stat_page) return;
     g_cloze_stat_level = level;
     g_cloze_stat_page = page;
+    g_seen_pages |= (1 << page);
     cloze_stats::visitPage(level, page);
-    cloze_progress::state(g_cloze_group, g_cloze_idx, level, page);
+    cloze_save_progress();
     cloze_append("page");
 }
 
@@ -5355,10 +5424,12 @@ static void handleWordInput() {
                         cloze_event("reveal_early", "K3");
                     } else {
                         --g_hint_tokens;
+                        ++g_level_reveals;
                         g_word_reveal = true;
                         g_word_force_blank = true;
                         cloze_stats::toggleAnswer();
                         cloze_append("answer_on");
+                        cloze_save_progress();
                         cloze_event("reveal_on", "K3");
                     }
                 } else {
@@ -5370,10 +5441,23 @@ static void handleWordInput() {
                 last_k3_ms = now;
             }
         }
-        if (in.up && !prevIn.up) { int old = g_cloze_level; g_cloze_level = g_cloze_level >= 6 ? 1 : g_cloze_level + 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); cloze_event("level_up", "JOY"); }
-        if (in.down && !prevIn.down) { int old = g_cloze_level; g_cloze_level = g_cloze_level <= 1 ? 6 : g_cloze_level - 1; g_random_owner = nullptr; g_random_page = -1; g_cloze_page = 0; g_cloze_stat_level = -1; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_stats::enterLevel(g_cloze_level); cloze_progress::state(g_cloze_group, g_cloze_idx, g_cloze_level, 0); cloze_append("level"); cloze_event("level_down", "JOY"); }
-        if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) { --g_cloze_page; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_event("page_prev", "JOY"); } }
-        if (in.x > 0 && prevIn.x <= 0) { ++g_cloze_page; g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000); cloze_event("page_next", "JOY"); }
+        if (in.x < 0 && prevIn.x >= 0) {
+            if (g_cloze_page > 0) {
+                --g_cloze_page;
+                g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000);
+                cloze_event("page_prev", "JOY");
+            }
+        }
+        if (in.x > 0 && prevIn.x <= 0) {
+            int pages = cloze_current_pages();
+            if (g_cloze_page + 1 < pages) {
+                ++g_cloze_page;
+                g_hint_page_ms = (uint32_t)(esp_timer_get_time()/1000);
+                cloze_event("page_next", "JOY");
+            } else {
+                cloze_submit_level();
+            }
+        }
         if (in.k1 && !prevIn.k1) cloze_switch(-1);
         if (in.k2 && !prevIn.k2) cloze_switch(1);
         if (in.k4 && !prevIn.k4) {

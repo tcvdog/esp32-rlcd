@@ -5,6 +5,9 @@ struct ClozeProgressItem {
     uint16_t opens;
     uint8_t level;
     uint8_t page;
+    uint8_t done;
+    uint8_t reveals;
+    uint16_t seen;
 };
 
 namespace cloze_progress {
@@ -12,6 +15,7 @@ void load();
 void save();
 void open(int group, int idx);
 void state(int group, int idx, int level, int page);
+void update(int group, int idx, int level, int page, int seen, int reveals, int done);
 const ClozeProgressItem *get(int group, int idx);
 int opens(int group, int idx);
 int completed(int group);

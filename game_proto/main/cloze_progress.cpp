@@ -45,6 +45,18 @@ void state(int group, int idx, int level, int page) {
     p[group][idx].page = (uint8_t)page;
 }
 
+void update(int group, int idx, int level, int page, int seen, int reveals, int done) {
+    ensure();
+    if (group < 0 || group >= 8 || idx < 0 || idx >= 64) return;
+    ClozeProgressItem &q = p[group][idx];
+    q.level = (uint8_t)level;
+    q.page = (uint8_t)page;
+    q.seen = (uint16_t)seen;
+    q.reveals = (uint8_t)reveals;
+    q.done = (uint8_t)(done ? 1 : q.done);
+    save();
+}
+
 const ClozeProgressItem *get(int group, int idx) {
     ensure();
     if (group < 0 || group >= 8 || idx < 0 || idx >= 64) return nullptr;
@@ -60,12 +72,12 @@ int completed(int group) {
     ensure();
     if (group < 0 || group >= 8) return 0;
     int n = 0;
-    for (int i = 0; i < 64; ++i) if (p[group][i].level >= 5) ++n;
+    for (int i = 0; i < 64; ++i) if (p[group][i].done) ++n;
     return n;
 }
 
 bool is_completed(int group, int idx) {
     const ClozeProgressItem *q = get(group, idx);
-    return q && q->level >= 5;
+    return q && q->done;
 }
 }
