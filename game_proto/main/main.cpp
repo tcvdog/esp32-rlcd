@@ -4776,7 +4776,14 @@ static void word_audio_toggle() {
 
 static void handleWordInput() {
     if (g_word_level == 4) {
-        if (in.k3 && !prevIn.k3) g_word_reveal = !g_word_reveal;
+        static uint32_t last_k3_ms = 0;
+        if (in.k3 && !prevIn.k3) {
+            uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+            if (now - last_k3_ms > 180) {
+                g_word_reveal = !g_word_reveal;
+                last_k3_ms = now;
+            }
+        }
         if (in.up && !prevIn.up) { g_cloze_level = g_cloze_level >= 5 ? 1 : g_cloze_level + 1; g_cloze_page = 0; }
         if (in.down && !prevIn.down) { g_cloze_level = g_cloze_level <= 1 ? 5 : g_cloze_level - 1; g_cloze_page = 0; }
         if (in.x < 0 && prevIn.x >= 0) { if (g_cloze_page > 0) --g_cloze_page; }
