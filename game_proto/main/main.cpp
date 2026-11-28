@@ -5237,7 +5237,11 @@ static void drawClozeMenu() {
     ui::setInk(ui::Ink::Black);
     ui::label16(10, 42, "诗词古文");
     ui::mono(112, 41, "CLOZE // STAGE");
-    ui::mono(340, 41, "05");
+    int totalDone = 0;
+    for (int g = 1; g <= 4; ++g) totalDone += cloze_progress::completed(g);
+    char hb[40];
+    snprintf(hb, sizeof(hb), "总198·完成%d", totalDone);
+    ui::label12(258, 42, hb);
     u8g2_DrawHLine(g, 8, 48, 384);
     const char *names[5] = { "小学·低年级", "小学·中高年级", "初中", "高中", "学习统计" };
     const int totals[4] = { 14, 62, 63, 59 };
