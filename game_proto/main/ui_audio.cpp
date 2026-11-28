@@ -92,9 +92,9 @@ void draw(u8g2_t *g, const View &v) {
     // angled headshell stays inside the disc.
     int px = wx + 120, pivotY = wy + 32;
     int ax1 = wx + 114, ay1 = wy + 56;
-    int ax2 = wx + 108, ay2 = wy + 80;
-    int ax3 = wx + 104, ay3 = wy + 102;
-    int hx = wx + 102,  hy = wy + 116;
+    int ax2 = wx + 110, ay2 = wy + 82;
+    int ax3 = wx + 104, ay3 = wy + 108;
+    int hx = wx + 88,  hy = wy + 108;
 
     // Counterweight behind the pivot.
     ui::setInk(ui::Ink::Black);
