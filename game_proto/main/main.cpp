@@ -5284,9 +5284,9 @@ static void drawClozeList() {
     int pages = (count + 5) / 6;
     if (g_cloze_list_page >= pages) g_cloze_list_page = pages - 1;
     if (g_cloze_list_page < 0) g_cloze_list_page = 0;
-    char b[40];
-    snprintf(b, sizeof(b), "%s · %d 篇 · %d/%d", cloze_group_sub(group), count,
-             g_cloze_list_page + 1, pages);
+    char b[56];
+    snprintf(b, sizeof(b), "%d 篇 · 完成 %d · %d/%d", count,
+             cloze_progress::completed(group), g_cloze_list_page + 1, pages);
     ui::label12(164, 45, b);
     u8g2_DrawHLine(g, 8, 54, 384);
     int first = g_cloze_list_page * 6;
@@ -5366,8 +5366,8 @@ static void drawClozeStats() {
     const char *stageNames[4] = { "小低", "小中", "初中", "高中" };
     int done = 0;
     for (int g = 1; g <= 4; ++g) done += cloze_progress::completed(g);
-    char b[64];
-    snprintf(b, sizeof(b), "198 篇 · 已完成 %d", done);
+    char b[80];
+    snprintf(b, sizeof(b), "总数 198   已完成 %d   未完成 %d", done, 198 - done);
     ui::label12(14, 72, b);
     u8g2_DrawHLine(g, 12, 82, 376);
 
@@ -5375,9 +5375,12 @@ static void drawClozeStats() {
     for (int g = 1; g <= 4; ++g) {
         int count = totals[g - 1];
         int rows = (count + 19) / 20;
-        ui::label12(8, gy + 8, stageNames[g - 1]);
+        int gd = cloze_progress::completed(g);
+        char lab[24];
+        snprintf(lab, sizeof(lab), "%s %d/%d", stageNames[g - 1], gd, count);
+        ui::label12(4, gy + 8, lab);
         for (int i = 0; i < count; ++i) {
-            int x = 46 + (i % 20) * 14;
+            int x = 88 + (i % 20) * 14;
             int y = gy + (i / 20) * 11;
             if (cloze_progress::is_completed(g, i)) {
                 u8g2_DrawBox(ui::g(), x, y, 8, 8);
