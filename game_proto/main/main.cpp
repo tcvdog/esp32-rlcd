@@ -528,6 +528,7 @@ static int g_word_idx = 0;
 static int g_word_level = 0; // 0 KET,1 PET,2 MATH,3 PHYS,4 POEM
 static int g_cloze_level = 1;
 static int g_cloze_page = 0;
+static bool g_word_force_blank = false;
 static int g_word_cat_sel = 0;
 static int g_survey_q = 0;
 static int g_survey_ans[5] = {3,3,3,3,3};
@@ -4781,6 +4782,7 @@ static void handleWordInput() {
             uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
             if (now - last_k3_ms > 180) {
                 g_word_reveal = !g_word_reveal;
+                g_word_force_blank = true;
                 last_k3_ms = now;
             }
         }
